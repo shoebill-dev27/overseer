@@ -6,10 +6,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from .routers import auth, internal, sessions, ws
+from .routers import actions, auth, internal, sessions, ws
 
 # ── Startup self-check ────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(sessions.router)
+app.include_router(actions.router)
 app.include_router(ws.router)
 # Internal router is mounted separately (127.0.0.1 only) — see __main__ block
 app.include_router(internal.router)
@@ -125,3 +127,15 @@ app.include_router(internal.router)
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# ── Static frontend ───────────────────────────────────────────────────────────
+# 素の JS/HTML/CSS をバックエンドから配信（CSP: script-src 'self' に適合）。
+# API ルータの後にマウントするため、/api · /auth · /ws · /internal が優先される。
+# html=True により "/" は index.html を返す。
+
+_FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+if _FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
+else:
+    print(f"[startup] WARNING: frontend directory not found at {_FRONTEND_DIR}")
