@@ -1,7 +1,7 @@
 """Internal API for Local Agent communication.
 
-Bound to 127.0.0.1 only (enforced in main.py via a separate server).
-Authenticated with HMAC-SHA256 shared secret.
+Restricted to loopback clients (127.0.0.1 / ::1) via the require_loopback
+dependency, and authenticated with an HMAC-SHA256 shared secret.
 """
 
 import hashlib
@@ -19,7 +19,22 @@ from ..database import get_db
 from ..scrubber import scrub
 from ..ws_manager import manager as ws_manager
 
-router = APIRouter(prefix="/internal", tags=["internal"])
+# Internal API は同一ホストの Local Agent 専用。ループバック以外の送信元は拒否する。
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
+
+
+async def require_loopback(request: Request) -> None:
+    client_host = request.client.host if request.client else None
+    if client_host not in _LOOPBACK_HOSTS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Internal API is loopback-only")
+
+
+# 全 /internal エンドポイントで送信元をループバックに限定する。
+router = APIRouter(
+    prefix="/internal",
+    tags=["internal"],
+    dependencies=[Depends(require_loopback)],
+)
 
 _MAX_SNAPSHOT_LINES = 100
 _MAX_SNAPSHOT_BYTES = 64 * 1024  # 64KB
