@@ -90,3 +90,21 @@ def test_heartbeat(client):
     resp = client.post("/internal/heartbeat", content=body, headers=sign_agent(body))
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+
+
+def test_non_loopback_client_rejected():
+    """署名が正しくても、ループバック以外の送信元からの /internal は 403 で拒否する。
+
+    require_loopback を無効化しない素の TestClient を使う。TestClient の送信元は
+    "testclient"（非ループバック）固定なので、ここでは実際の制限が働く。
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    body = _update_body()
+    with TestClient(app) as external:
+        resp = external.post(
+            "/internal/sessions/update", content=body, headers=sign_agent(body)
+        )
+    assert resp.status_code == 403
