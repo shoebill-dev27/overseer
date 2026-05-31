@@ -46,9 +46,7 @@ async def get_session(
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
     row = await (
-        await db.execute(
-            "SELECT * FROM claude_sessions WHERE id = ?", (session_id,)
-        )
+        await db.execute("SELECT * FROM claude_sessions WHERE id = ?", (session_id,))
     ).fetchone()
 
     if row is None:
@@ -70,9 +68,7 @@ async def get_snapshot(
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
     session = await (
-        await db.execute(
-            "SELECT id FROM claude_sessions WHERE id = ?", (session_id,)
-        )
+        await db.execute("SELECT id FROM claude_sessions WHERE id = ?", (session_id,))
     ).fetchone()
 
     if session is None:
@@ -109,13 +105,19 @@ async def _get_agent_status(db: aiosqlite.Connection) -> dict:
     ).fetchone()
 
     if row is None:
-        return {"status": "NEVER_CONNECTED", "last_seen_at": None, "agent_version": None}
+        return {
+            "status": "NEVER_CONNECTED",
+            "last_seen_at": None,
+            "agent_version": None,
+        }
 
     last_seen = datetime.fromisoformat(row["last_seen_at"])
     if last_seen.tzinfo is None:
         last_seen = last_seen.replace(tzinfo=timezone.utc)
 
-    threshold = datetime.now(timezone.utc) - timedelta(minutes=_AGENT_OFFLINE_THRESHOLD_MINUTES)
+    threshold = datetime.now(timezone.utc) - timedelta(
+        minutes=_AGENT_OFFLINE_THRESHOLD_MINUTES
+    )
     is_offline = last_seen < threshold
 
     return {
