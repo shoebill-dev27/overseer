@@ -32,17 +32,21 @@ class PatternMatcher:
         compiled = []
         for p in data.get("patterns", []):
             try:
-                compiled.append((
-                    p["name"],
-                    p["category"],
-                    re.compile(p["regex"], re.MULTILINE),
-                ))
+                compiled.append(
+                    (
+                        p["name"],
+                        p["category"],
+                        re.compile(p["regex"], re.MULTILINE),
+                    )
+                )
             except re.error as e:
                 print(f"[patterns] Invalid regex in '{p['name']}': {e}")
 
         self._compiled = compiled
         self._last_loaded = time.monotonic()
-        print(f"[patterns] Loaded {len(self._compiled)} patterns from {self._path.name}")
+        print(
+            f"[patterns] Loaded {len(self._compiled)} patterns from {self._path.name}"
+        )
 
     def maybe_reload(self) -> None:
         if time.monotonic() - self._last_loaded >= self._reload_interval:
