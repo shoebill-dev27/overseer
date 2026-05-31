@@ -3,7 +3,6 @@
 import aiosqlite
 import asyncio
 import os
-from pathlib import Path
 
 DB_PATH = os.getenv("DATABASE_PATH", "overseer.db")
 
