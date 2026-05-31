@@ -1,5 +1,5 @@
-.PHONY: setup setup-backend setup-agent setup-frontend
-.PHONY: run-backend run-agent run-frontend dev
+.PHONY: setup setup-backend setup-agent
+.PHONY: run-backend run-agent dev
 .PHONY: lint test db-init help
 
 BACKEND_DIR := backend
@@ -14,7 +14,7 @@ help:
 	@echo "  setup-agent     Install agent dependencies"
 	@echo ""
 	@echo "Run:"
-	@echo "  run-backend     Start FastAPI (port 8000)"
+	@echo "  run-backend     Start FastAPI + serve UI (port 8000)"
 	@echo "  run-agent       Start Local Agent"
 	@echo "  dev             Start backend + agent"
 	@echo ""

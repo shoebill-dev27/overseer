@@ -8,14 +8,30 @@ from pathlib import Path
 
 import yaml
 
-from client import AGENT_VERSION, check_backend_reachable, push_session_update, send_heartbeat
+from client import (
+    AGENT_VERSION,
+    check_backend_reachable,
+    fetch_pending_actions,
+    push_session_update,
+    report_action_result,
+    send_heartbeat,
+)
 from pattern_matcher import PatternMatcher
 from scrubber import scrub
-from tmux_monitor import capture_pane, list_sessions
+from tmux_monitor import capture_pane, list_sessions, send_keys
 
 _BASE = Path(__file__).parent.parent
 _AGENT_CONFIG = _BASE / "config" / "agent.yaml"
 _PATTERNS_CONFIG = _BASE / "config" / "waiting_patterns.yaml"
+
+# アクション種別 → tmux send-keys のトークン列
+# STOP は Claude Code の中断キー（Escape）。
+_ACTION_KEYS: dict[str, list[str]] = {
+    "SEND_Y": ["y", "Enter"],
+    "SEND_N": ["n", "Enter"],
+    "SEND_ENTER": ["Enter"],
+    "STOP": ["Escape"],
+}
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -53,6 +69,55 @@ def startup_check() -> str:
     return "HEALTHY"
 
 
+# ── Action execution ────────────────────────────────────────────────────────
+
+
+async def execute_pending_actions(action_flags: dict[str, bool]) -> None:
+    """確認済み操作を取得し、設定で許可されたものを tmux に送信して結果を報告する。
+
+    action_flags は agent.yaml の actions セクション。Agent 側を最終ゲートとして、
+    無効化された種別は実行せず FAILED を報告する。
+    """
+    try:
+        actions = await fetch_pending_actions()
+    except Exception as e:
+        print(f"[agent] Fetch actions error: {e}")
+        return
+
+    for action in actions:
+        action_id = action["id"]
+        atype = action["action_type"]
+        tmux_name = action["tmux_name"]
+
+        if not action_flags.get(atype, False):
+            print(f"[agent] action {action_id} ({atype}): disabled in config → FAILED")
+            await _report(action_id, "FAILED", "action type disabled in agent config")
+            continue
+
+        keys = _ACTION_KEYS.get(atype)
+        if keys is None:
+            await _report(action_id, "FAILED", f"unknown action type: {atype}")
+            continue
+
+        ok = send_keys(tmux_name, keys)
+        print(
+            f"[agent] action {action_id} ({atype}) → {tmux_name}: "
+            f"{'EXECUTED' if ok else 'FAILED'}"
+        )
+        await _report(
+            action_id,
+            "EXECUTED" if ok else "FAILED",
+            None if ok else "tmux send-keys failed",
+        )
+
+
+async def _report(action_id: int, status: str, reason: str | None) -> None:
+    try:
+        await report_action_result(action_id, status, reason)
+    except Exception as e:
+        print(f"[agent] Report result error for action {action_id}: {e}")
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 
@@ -73,12 +138,15 @@ async def main() -> None:
     capture_lines: int = monitoring["capture_lines"]
     pattern_reload: int = monitoring["pattern_reload_seconds"]
     heartbeat_interval: int = backend_cfg["heartbeat_interval_seconds"]
+    action_flags: dict[str, bool] = config.get("actions", {})
 
     # Check backend reachability (warning only — agent still starts)
     if await check_backend_reachable():
         print("[agent] Backend reachable ✓")
     else:
-        print("[agent] WARNING: Backend not reachable at startup. Will retry each poll.")
+        print(
+            "[agent] WARNING: Backend not reachable at startup. Will retry each poll."
+        )
 
     matcher = PatternMatcher(str(_PATTERNS_CONFIG), reload_interval=pattern_reload)
 
@@ -135,8 +203,10 @@ async def main() -> None:
 
             prev = last_status.get(session_name)
             if status != prev:
-                print(f"[agent] {session_name}: {prev} → {status}"
-                      + (f" ({waiting_pattern})" if waiting_pattern else ""))
+                print(
+                    f"[agent] {session_name}: {prev} → {status}"
+                    + (f" ({waiting_pattern})" if waiting_pattern else "")
+                )
 
             # Scrub before sending
             scrubbed = [scrub(line) for line in lines]
@@ -155,6 +225,9 @@ async def main() -> None:
             last_status[session_name] = status
 
         known_sessions = current_sessions
+
+        # ── Execute confirmed actions ──────────────────────────────────────
+        await execute_pending_actions(action_flags)
 
         # ── Sleep until next poll ──────────────────────────────────────────
         elapsed = asyncio.get_event_loop().time() - loop_start

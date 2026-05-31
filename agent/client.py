@@ -74,6 +74,35 @@ async def send_heartbeat() -> bool:
     return resp.status_code == 200
 
 
+async def fetch_pending_actions() -> list[dict]:
+    """実行待ち（CONFIRMED）の操作一覧を取得する。失敗時は空リスト。"""
+    body = b""  # GET なのでボディは空。HMAC は空ボディに対して署名する。
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+        resp = await c.get(
+            f"{_BACKEND_URL}/internal/actions/pending",
+            headers=_headers(body),
+        )
+    if resp.status_code != 200:
+        return []
+    return resp.json().get("actions", [])
+
+
+async def report_action_result(
+    action_id: int,
+    status: str,
+    failure_reason: str | None = None,
+) -> bool:
+    payload = {"status": status, "failure_reason": failure_reason}
+    body = json.dumps(payload).encode()
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+        resp = await c.post(
+            f"{_BACKEND_URL}/internal/actions/{action_id}/result",
+            content=body,
+            headers=_headers(body),
+        )
+    return resp.status_code == 200
+
+
 async def check_backend_reachable() -> bool:
     try:
         async with httpx.AsyncClient(timeout=3) as c:

@@ -24,9 +24,8 @@ notification:
 
 actions:
   # Phase 2で有効化するアクション
-  # Phase 1では全て false
-  STOP: false
-  SEND_Y: false
-  SEND_N: false
-  SEND_ENTER: false
+  STOP: true
+  SEND_Y: true
+  SEND_N: true
+  SEND_ENTER: true
   SEND_TEXT: false  # Phase 3のみ
