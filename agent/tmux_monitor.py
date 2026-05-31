@@ -26,3 +26,17 @@ def capture_pane(session_name: str, lines: int = 300) -> list[str]:
     if result.returncode != 0:
         return []
     return result.stdout.splitlines()
+
+
+def send_keys(session_name: str, keys: list[str]) -> bool:
+    """Send key sequences to a tmux session. Returns True on success.
+
+    keys は tmux send-keys にそのまま渡すトークン列。
+    （例: ["y", "Enter"] / ["Enter"] / ["Escape"]）
+    """
+    result = subprocess.run(
+        ["tmux", "send-keys", "-t", session_name, *keys],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0

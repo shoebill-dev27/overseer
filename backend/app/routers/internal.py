@@ -7,7 +7,7 @@ Authenticated with HMAC-SHA256 shared secret.
 import hashlib
 import hmac
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -23,6 +23,9 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 
 _MAX_SNAPSHOT_LINES = 100
 _MAX_SNAPSHOT_BYTES = 64 * 1024  # 64KB
+
+# PENDING_CONFIRM のまま確認されなかった操作の有効期限（actions.py と同値）
+_ACTION_TTL_SECONDS = 120
 
 
 # ── HMAC verification ─────────────────────────────────────────────────────────
@@ -64,6 +67,11 @@ class SessionUpdate(BaseModel):
 
 class HeartbeatPayload(BaseModel):
     agent_version: str = "unknown"
+
+
+class ActionResult(BaseModel):
+    status: str  # EXECUTED | FAILED
+    failure_reason: str | None = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -187,6 +195,71 @@ async def heartbeat(
             status = 'ONLINE'
         """,
         (now_iso, payload.agent_version),
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/actions/pending", dependencies=[Depends(verify_agent_auth)])
+async def pending_actions(
+    db: aiosqlite.Connection = Depends(get_db),
+) -> dict:
+    """Agent が実行すべき CONFIRMED 操作を返す。未確認のまま期限切れの操作は EXPIRED に落とす。"""
+    now = datetime.now(timezone.utc)
+    cutoff_iso = (now - timedelta(seconds=_ACTION_TTL_SECONDS)).isoformat()
+    await db.execute(
+        "UPDATE actions SET status = 'EXPIRED' "
+        "WHERE status = 'PENDING_CONFIRM' AND created_at < ?",
+        (cutoff_iso,),
+    )
+    await db.commit()
+
+    rows = await (
+        await db.execute(
+            """
+            SELECT a.id, a.action_type, a.text_payload, s.tmux_name
+            FROM actions a
+            JOIN claude_sessions s ON s.id = a.session_id
+            WHERE a.status = 'CONFIRMED'
+            ORDER BY a.confirmed_at ASC
+            """
+        )
+    ).fetchall()
+
+    return {
+        "actions": [
+            {
+                "id": r["id"],
+                "action_type": r["action_type"],
+                "text_payload": r["text_payload"],
+                "tmux_name": r["tmux_name"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/actions/{action_id}/result", dependencies=[Depends(verify_agent_auth)])
+async def action_result(
+    action_id: int,
+    payload: ActionResult,
+    db: aiosqlite.Connection = Depends(get_db),
+) -> dict:
+    if payload.status not in {"EXECUTED", "FAILED"}:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid result status"
+        )
+
+    row = await (
+        await db.execute("SELECT status FROM actions WHERE id = ?", (action_id,))
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Action not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE actions SET status = ?, executed_at = ?, failure_reason = ? WHERE id = ?",
+        (payload.status, now_iso, payload.failure_reason, action_id),
     )
     await db.commit()
     return {"ok": True}
