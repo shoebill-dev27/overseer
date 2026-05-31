@@ -1,0 +1,32 @@
+# Local Agent 設定
+
+monitoring:
+  # 監視対象tmuxセッションのプレフィックス（前方一致）
+  session_prefix: "claude-"
+  # tmux capture-pane ポーリング間隔（秒）
+  poll_interval_seconds: 10
+  # capture-pane で取得する行数
+  capture_lines: 300
+  # waiting_patterns.yaml の動的リロード間隔（秒）
+  pattern_reload_seconds: 60
+
+backend:
+  # FastAPI バックエンドURL（localhost固定）
+  url: "http://127.0.0.1:8000"
+  # Heartbeat 送信間隔（秒）
+  heartbeat_interval_seconds: 60
+  # リクエストタイムアウト（秒）
+  request_timeout_seconds: 5
+
+notification:
+  # 同一セッションの再通知抑制（秒）
+  cooldown_seconds: 1800  # 30分
+
+actions:
+  # Phase 2で有効化するアクション
+  # Phase 1では全て false
+  STOP: false
+  SEND_Y: false
+  SEND_N: false
+  SEND_ENTER: false
+  SEND_TEXT: false  # Phase 3のみ
