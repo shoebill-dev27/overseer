@@ -120,7 +120,9 @@ app.include_router(auth.router)
 app.include_router(sessions.router)
 app.include_router(actions.router)
 app.include_router(ws.router)
-# Internal router is mounted separately (127.0.0.1 only) — see __main__ block
+# Internal router はメインアプリに同梱して 0.0.0.0:8000 で配信されるが、
+# require_loopback 依存性がクライアントIPをループバック(127.0.0.1/::1)に限定するため、
+# 外部(Tailscale等)からの /internal アクセスは 403 で拒否される。
 app.include_router(internal.router)
 
 

@@ -28,4 +28,6 @@ actions:
   SEND_Y: true
   SEND_N: true
   SEND_ENTER: true
-  SEND_TEXT: false  # Phase 3のみ
+  # 任意テキスト送信。実装済みだが安全のため既定で無効。有効化するとブラウザから
+  # tmux へ任意文字列を送れるため、運用上の判断で明示的に true にすること。
+  SEND_TEXT: false

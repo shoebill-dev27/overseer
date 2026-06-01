@@ -18,7 +18,7 @@ from client import (
 )
 from pattern_matcher import PatternMatcher
 from scrubber import scrub
-from tmux_monitor import capture_pane, list_sessions, send_keys
+from tmux_monitor import capture_pane, list_sessions, send_keys, send_text
 
 _BASE = Path(__file__).parent.parent
 _AGENT_CONFIG = _BASE / "config" / "agent.yaml"
@@ -94,12 +94,19 @@ async def execute_pending_actions(action_flags: dict[str, bool]) -> None:
             await _report(action_id, "FAILED", "action type disabled in agent config")
             continue
 
-        keys = _ACTION_KEYS.get(atype)
-        if keys is None:
-            await _report(action_id, "FAILED", f"unknown action type: {atype}")
-            continue
+        if atype == "SEND_TEXT":
+            text = action.get("text_payload")
+            if not text:
+                await _report(action_id, "FAILED", "missing text_payload")
+                continue
+            ok = send_text(tmux_name, text)
+        else:
+            keys = _ACTION_KEYS.get(atype)
+            if keys is None:
+                await _report(action_id, "FAILED", f"unknown action type: {atype}")
+                continue
+            ok = send_keys(tmux_name, keys)
 
-        ok = send_keys(tmux_name, keys)
         print(
             f"[agent] action {action_id} ({atype}) → {tmux_name}: "
             f"{'EXECUTED' if ok else 'FAILED'}"
