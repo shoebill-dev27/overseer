@@ -1,5 +1,6 @@
 """GitHub OAuth 2.0 authentication endpoints."""
 
+import asyncio
 import secrets
 import time
 
@@ -32,6 +33,30 @@ def _clean_states() -> None:
     expired = [s for s, ts in _pending_states.items() if ts < cutoff]
     for s in expired:
         del _pending_states[s]
+
+
+# GitHub への通信は一時的な接続エラーで失敗しうるため、数回リトライする。
+_HTTP_TIMEOUT = 10.0
+_HTTP_RETRIES = 4
+
+
+async def _github_request(method: str, url: str, **kwargs) -> httpx.Response:
+    """GitHub へ HTTP リクエストを送り、一時的な接続/読み取りエラーをリトライする。
+
+    全試行が失敗した場合は 502 を返す（500 ではなく上流障害として扱う）。
+    """
+    last_exc: httpx.TransportError | None = None
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        for attempt in range(_HTTP_RETRIES):
+            try:
+                return await client.request(method, url, **kwargs)
+            except httpx.TransportError as exc:
+                last_exc = exc
+                if attempt < _HTTP_RETRIES - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+    raise HTTPException(
+        status.HTTP_502_BAD_GATEWAY, "GitHub request failed"
+    ) from last_exc
 
 
 @router.get("/github")
@@ -68,17 +93,17 @@ async def github_callback(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing code parameter")
 
     # Exchange code for access token
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(
-            GITHUB_TOKEN_URL,
-            data={
-                "client_id": settings.github_client_id,
-                "client_secret": settings.github_client_secret,
-                "code": code,
-                "redirect_uri": settings.github_callback_url,
-            },
-            headers={"Accept": "application/json"},
-        )
+    token_resp = await _github_request(
+        "POST",
+        GITHUB_TOKEN_URL,
+        data={
+            "client_id": settings.github_client_id,
+            "client_secret": settings.github_client_secret,
+            "code": code,
+            "redirect_uri": settings.github_callback_url,
+        },
+        headers={"Accept": "application/json"},
+    )
 
     if token_resp.status_code != 200:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "GitHub token exchange failed")
@@ -89,11 +114,11 @@ async def github_callback(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No access token in response")
 
     # Get GitHub user info
-    async with httpx.AsyncClient() as client:
-        user_resp = await client.get(
-            GITHUB_USER_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+    user_resp = await _github_request(
+        "GET",
+        GITHUB_USER_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
 
     if user_resp.status_code != 200:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "GitHub user fetch failed")
