@@ -41,9 +41,16 @@ def client():
     """テストごとに空の DB から起動した TestClient を返す。"""
     _clear_db()
     from app.main import app  # lifespan が init_db を実行してスキーマを作成
+    from app.routers.internal import require_loopback
 
-    with TestClient(app) as c:
-        yield c
+    # TestClient の送信元は "testclient" 固定でループバック判定を通らないため、
+    # /internal のループバック制限のみ無効化する（HMAC 検証は本物のまま）。
+    app.dependency_overrides[require_loopback] = lambda: None
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.dependency_overrides.pop(require_loopback, None)
     _clear_db()
 
 

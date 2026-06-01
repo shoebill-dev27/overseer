@@ -16,8 +16,11 @@ from ..database import get_db
 
 router = APIRouter(prefix="/api", tags=["actions"])
 
-# Phase 2 で実行可能なアクション（SEND_TEXT は Phase 3）
-PHASE2_ACTIONS = {"SEND_Y", "SEND_N", "SEND_ENTER", "STOP"}
+# 作成可能なアクション。SEND_TEXT のみ text_payload を伴う。
+SUPPORTED_ACTIONS = {"SEND_Y", "SEND_N", "SEND_ENTER", "STOP", "SEND_TEXT"}
+
+# SEND_TEXT のテキスト最大長
+MAX_TEXT_LENGTH = 1000
 
 # PENDING_CONFIRM のまま確認されなかった操作の有効期限
 ACTION_TTL_SECONDS = 120
@@ -35,6 +38,38 @@ def _parse(ts: str) -> datetime:
 class CreateAction(BaseModel):
     action_type: str
     idempotency_key: str
+    text_payload: str | None = None
+
+
+def _validate_payload(action_type: str, text_payload: str | None) -> str | None:
+    """種別ごとに text_payload を検証して正規化する。
+
+    SEND_TEXT は非空テキスト必須（改行は複数コマンド注入を防ぐため禁止）。
+    それ以外の種別に text_payload を付けることは許さない。
+    """
+    if action_type == "SEND_TEXT":
+        if text_payload is None or text_payload.strip() == "":
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "SEND_TEXT requires a non-empty text_payload",
+            )
+        if len(text_payload) > MAX_TEXT_LENGTH:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"text_payload exceeds {MAX_TEXT_LENGTH} characters",
+            )
+        if "\n" in text_payload or "\r" in text_payload:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "text_payload must not contain newlines",
+            )
+        return text_payload
+    if text_payload is not None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{action_type} does not accept a text_payload",
+        )
+    return None
 
 
 def _fmt_action(row: aiosqlite.Row) -> dict:
@@ -58,11 +93,13 @@ async def create_action(
     user: aiosqlite.Row = Depends(require_operator),
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
-    if payload.action_type not in PHASE2_ACTIONS:
+    if payload.action_type not in SUPPORTED_ACTIONS:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"Unsupported action type: {payload.action_type}",
         )
+
+    text_payload = _validate_payload(payload.action_type, payload.text_payload)
 
     session = await (
         await db.execute("SELECT id FROM claude_sessions WHERE id = ?", (session_id,))
@@ -84,10 +121,18 @@ async def create_action(
     await db.execute(
         """
         INSERT INTO actions
-            (session_id, user_id, action_type, status, idempotency_key, created_at)
-        VALUES (?, ?, ?, 'PENDING_CONFIRM', ?, ?)
+            (session_id, user_id, action_type, text_payload, status,
+             idempotency_key, created_at)
+        VALUES (?, ?, ?, ?, 'PENDING_CONFIRM', ?, ?)
         """,
-        (session_id, user["id"], payload.action_type, payload.idempotency_key, now_iso),
+        (
+            session_id,
+            user["id"],
+            payload.action_type,
+            text_payload,
+            payload.idempotency_key,
+            now_iso,
+        ),
     )
     await db.commit()
 
@@ -99,12 +144,16 @@ async def create_action(
     ).fetchone()
 
     ip = request.client.host if request.client else None
+    # 監査ログには生テキストを残さない（秘密情報の漏洩面を増やさないため文字数のみ）。
+    detail = {"action_type": payload.action_type, "action_id": row["id"]}
+    if text_payload is not None:
+        detail["text_length"] = len(text_payload)
     await log_event(
         db,
         "CREATE_ACTION",
         user_id=user["id"],
         session_id=session_id,
-        detail={"action_type": payload.action_type, "action_id": row["id"]},
+        detail=detail,
         ip_address=ip,
     )
 
