@@ -16,11 +16,11 @@ def _create_session(client, tmux_name="claude-act"):
     return resp.json()["session_id"]
 
 
-def _create_action(client, session_id, action_type="SEND_Y", key="k1"):
-    return client.post(
-        f"/api/sessions/{session_id}/actions",
-        json={"action_type": action_type, "idempotency_key": key},
-    )
+def _create_action(client, session_id, action_type="SEND_Y", key="k1", text=None):
+    body = {"action_type": action_type, "idempotency_key": key}
+    if text is not None:
+        body["text_payload"] = text
+    return client.post(f"/api/sessions/{session_id}/actions", json=body)
 
 
 def test_create_requires_operator(client, make_user):
@@ -43,8 +43,54 @@ def test_operator_creates_pending(client, make_user):
 def test_unsupported_action_type_rejected(client, make_user):
     session_id = _create_session(client)
     client.cookies.set("overseer_session", make_user(role="OPERATOR"))
+    resp = _create_action(client, session_id, action_type="REBOOT")
+    assert resp.status_code == 422
+
+
+def test_send_text_creates_pending(client, make_user):
+    session_id = _create_session(client)
+    client.cookies.set("overseer_session", make_user(role="OPERATOR"))
+    resp = _create_action(client, session_id, action_type="SEND_TEXT", text="hello")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "PENDING_CONFIRM"
+
+
+def test_send_text_requires_payload(client, make_user):
+    session_id = _create_session(client)
+    client.cookies.set("overseer_session", make_user(role="OPERATOR"))
     resp = _create_action(client, session_id, action_type="SEND_TEXT")
     assert resp.status_code == 422
+
+
+def test_send_text_rejects_newline(client, make_user):
+    session_id = _create_session(client)
+    client.cookies.set("overseer_session", make_user(role="OPERATOR"))
+    resp = _create_action(
+        client, session_id, action_type="SEND_TEXT", text="a\nrm -rf /"
+    )
+    assert resp.status_code == 422
+
+
+def test_text_payload_rejected_for_non_text_action(client, make_user):
+    session_id = _create_session(client)
+    client.cookies.set("overseer_session", make_user(role="OPERATOR"))
+    resp = _create_action(client, session_id, action_type="SEND_Y", text="oops")
+    assert resp.status_code == 422
+
+
+def test_send_text_payload_reaches_pending(client, make_user):
+    """SEND_TEXT の text_payload が Agent 向け pending 一覧まで運ばれること。"""
+    session_id = _create_session(client)
+    client.cookies.set("overseer_session", make_user(role="OPERATOR"))
+    action = _create_action(
+        client, session_id, action_type="SEND_TEXT", text="git status"
+    ).json()
+    client.post(f"/api/actions/{action['id']}/confirm")
+
+    pending = client.get("/internal/actions/pending", headers=sign_agent(b"")).json()
+    target = next(a for a in pending["actions"] if a["id"] == action["id"])
+    assert target["action_type"] == "SEND_TEXT"
+    assert target["text_payload"] == "git status"
 
 
 def test_create_on_missing_session_404(client, make_user):

@@ -40,3 +40,24 @@ def send_keys(session_name: str, keys: list[str]) -> bool:
         text=True,
     )
     return result.returncode == 0
+
+
+def send_text(session_name: str, text: str) -> bool:
+    """Type literal text into a tmux session, then submit with Enter.
+
+    -l でリテラル送信するため、テキストはキー名として解釈されない。
+    送信(-l)と確定(Enter)を分けて、Enter がリテラル文字にならないようにする。
+    """
+    literal = subprocess.run(
+        ["tmux", "send-keys", "-t", session_name, "-l", text],
+        capture_output=True,
+        text=True,
+    )
+    if literal.returncode != 0:
+        return False
+    enter = subprocess.run(
+        ["tmux", "send-keys", "-t", session_name, "Enter"],
+        capture_output=True,
+        text=True,
+    )
+    return enter.returncode == 0
