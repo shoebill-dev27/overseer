@@ -15,7 +15,7 @@ Claude Code を `tmux` 上で長時間走らせると、こちらの承認（`Do
 
 - 監視対象 tmux セッションを定期的に覗き、**RUNNING / WAITING_FOR_INPUT / FINISHED** を判定
 - 画面内容（スナップショット）を**シークレットを伏字化した上で**Web UIに表示
-- ブラウザから **Y / N / Enter / 中断(STOP)** を、二段階確認つきで送信
+- ブラウザから **Y / N / Enter / 中断(STOP)**（および任意テキスト送信）を、二段階確認つきで送信
 
 ---
 
@@ -90,7 +90,7 @@ Agent:   tmux send-keys 実行                      → POST /internal/actions/{
 | ロール    | できること                                        |
 |-----------|---------------------------------------------------|
 | VIEWER    | セッション一覧 / 詳細 / スナップショットの閲覧      |
-| OPERATOR  | 上記 + アクションの作成・確認（Y/N/Enter/STOP）     |
+| OPERATOR  | 上記 + アクション作成・確認（Y/N/Enter/STOP、任意テキスト）|
 | ADMIN     | 上記すべて（現状 ADMIN 専用エンドポイントは無し）   |
 
 ---
@@ -195,7 +195,9 @@ make dev           # backend と agent を同時起動
   （プロキシ経由だと送信元が 127.0.0.1 に見えるため）。
 - `SECRET_KEY` は起動時の存在チェックのみで、現状コードでは署名に未使用（将来用に予約）。
 - OAuth の state はプロセス内メモリ保持（単一プロセス前提。再起動でログイン途中状態は消える）。
-- `SEND_TEXT` は Phase 3 用で未実装・既定で無効。
+- `SEND_TEXT`（任意テキスト送信）は実装済みだが、安全のため `config/agent.yaml` で
+  **既定無効**。有効化するとブラウザから tmux へ任意文字列を送れるため、運用判断で明示的に
+  `SEND_TEXT: true` にすること（OPERATOR 以上＋二段階確認は常に必須）。
 
 ---
 
@@ -203,7 +205,7 @@ make dev           # backend と agent を同時起動
 
 ```bash
 make lint    # ruff check + ruff format --check（backend / agent）
-make test    # pytest（backend 35 + agent 17 = 52 件）
+make test    # pytest（backend 41 + agent 19 = 60 件）
 ```
 
 ### プロジェクト構成
@@ -239,6 +241,6 @@ overseer/
 
 - **Phase 1**（閲覧 Web UI）— 完了
 - **Phase 2**（操作アクション: SEND_Y/N/ENTER/STOP、二段階確認・HMAC・監査ログ）— 完了
-- **Phase 3**（`SEND_TEXT` 等）— 未着手
+- **Phase 3**（`SEND_TEXT`: 任意テキスト送信。既定無効）— 完了
 
-`make lint` 緑 / `make test` 全 52 件 pass。
+`make lint` 緑 / `make test` 全 60 件 pass。

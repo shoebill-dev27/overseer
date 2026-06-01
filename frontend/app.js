@@ -20,7 +20,11 @@ const ACTION_LABELS = {
   SEND_N: "No (n)",
   SEND_ENTER: "Enter",
   STOP: "STOP (Esc)",
+  SEND_TEXT: "テキスト送信",
 };
+
+// SEND_TEXT のテキスト最大長（backend の MAX_TEXT_LENGTH と一致させる）
+const MAX_TEXT_LENGTH = 1000;
 
 // ── DOM ヘルパ ────────────────────────────────────────────────────────────
 
@@ -195,22 +199,51 @@ function renderActions(session) {
     btn.addEventListener("click", () => doAction(session, type));
     bar.appendChild(btn);
   }
+
+  // 任意テキスト送信（SEND_TEXT）: 入力欄 + 送信ボタン
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "text-input";
+  input.placeholder = "送信するテキスト";
+  input.maxLength = MAX_TEXT_LENGTH;
+
+  const sendBtn = document.createElement("button");
+  sendBtn.className = "btn-action";
+  sendBtn.textContent = ACTION_LABELS.SEND_TEXT;
+  sendBtn.addEventListener("click", () => {
+    const text = input.value;
+    if (text.trim() === "") {
+      setActionStatus("テキストを入力してください。");
+      return;
+    }
+    doAction(session, "SEND_TEXT", text).then(() => { input.value = ""; });
+  });
+
+  bar.appendChild(input);
+  bar.appendChild(sendBtn);
   show(bar);
 }
 
-async function doAction(session, actionType) {
+async function doAction(session, actionType, textPayload = null) {
   const label = ACTION_LABELS[actionType];
-  if (!confirm(`「${label}」を ${session.tmux_name} に送信しますか?`)) return;
+  const target = `${session.tmux_name} に送信しますか?`;
+  const message = actionType === "SEND_TEXT"
+    ? `「${textPayload}」を ${target}`
+    : `「${label}」を ${target}`;
+  if (!confirm(message)) return;
 
   // 冪等キー: 二重送信を防ぐためクリックごとに一意な値を生成
   const idempotencyKey =
     `${session.id}-${actionType}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+  const body = { action_type: actionType, idempotency_key: idempotencyKey };
+  if (textPayload !== null) body.text_payload = textPayload;
+
   // 1) 作成（PENDING_CONFIRM）
   let resp = await api(`/api/sessions/${session.id}/actions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action_type: actionType, idempotency_key: idempotencyKey }),
+    body: JSON.stringify(body),
   });
   if (resp.status !== 200) {
     setActionStatus(`操作の作成に失敗しました (${resp.status})`);
