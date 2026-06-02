@@ -1,4 +1,4 @@
-"""agent 側 scrubber のテスト（backend と同一の挙動を担保）。"""
+"""Tests for the agent-side scrubber (ensures identical behavior to the backend)."""
 
 from scrubber import scrub
 
