@@ -1,32 +1,32 @@
 "use strict";
 
-// Overseer フロントエンド — fetch でデータ取得、WebSocket でリアルタイム更新。
-// バックエンドと同一オリジンで配信されるため、Cookie 認証は自動で付与される。
+// Overseer frontend — fetch for data, WebSocket for real-time updates.
+// Served from the same origin as the backend, so cookie auth is sent automatically.
 
-// ── 状態 ──────────────────────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────────────
 
-let selectedId = null;   // 現在詳細表示中の session id
-let sessionsCache = [];  // 直近のセッション一覧
-let currentRole = null;  // ログインユーザーのロール（操作可否の判定に使用）
+let selectedId = null;   // session id currently shown in detail
+let sessionsCache = [];  // most recent session list
+let currentRole = null;  // logged-in user's role (used to decide whether actions are allowed)
 let ws = null;
 let wsReconnectTimer = null;
 
-// OPERATOR / ADMIN のみアクションを実行できる
+// Only OPERATOR / ADMIN can perform actions
 const CAN_OPERATE = () => currentRole === "OPERATOR" || currentRole === "ADMIN";
 
-// アクションのラベル（確認ダイアログ・ボタン表示用）
+// Action labels (for the confirm dialog and button display)
 const ACTION_LABELS = {
   SEND_Y: "Yes (y)",
   SEND_N: "No (n)",
   SEND_ENTER: "Enter",
   STOP: "STOP (Esc)",
-  SEND_TEXT: "テキスト送信",
+  SEND_TEXT: "Send text",
 };
 
-// SEND_TEXT のテキスト最大長（backend の MAX_TEXT_LENGTH と一致させる）
+// Max text length for SEND_TEXT (must match MAX_TEXT_LENGTH in the backend)
 const MAX_TEXT_LENGTH = 1000;
 
-// ── DOM ヘルパ ────────────────────────────────────────────────────────────
+// ── DOM helpers ────────────────────────────────────────────────────────────
 
 const $ = (id) => document.getElementById(id);
 
@@ -40,7 +40,7 @@ async function api(path, options = {}) {
   return resp;
 }
 
-// ── 認証 ──────────────────────────────────────────────────────────────────
+// ── Authentication ──────────────────────────────────────────────────────────────────
 
 async function init() {
   const resp = await api("/auth/me");
@@ -67,7 +67,7 @@ async function logout() {
   location.reload();
 }
 
-// ── セッション一覧 ────────────────────────────────────────────────────────
+// ── Session list ────────────────────────────────────────────────────────
 
 async function refreshSessions() {
   const resp = await api("/api/sessions");
@@ -78,7 +78,7 @@ async function refreshSessions() {
   renderAgentBadge(data.agent);
   renderSessionList(data.sessions);
 
-  // 選択中セッションが消えていなければ詳細も最新化
+  // If the selected session still exists, refresh its detail too
   if (selectedId !== null && sessionsCache.some((s) => s.id === selectedId)) {
     renderDetailHeader(sessionsCache.find((s) => s.id === selectedId));
   }
@@ -95,7 +95,7 @@ function renderAgentBadge(agent) {
     badge.textContent = "Agent: OFFLINE";
   } else {
     badge.className = "badge badge-unknown";
-    badge.textContent = "Agent: 未接続";
+    badge.textContent = "Agent: not connected";
   }
 }
 
@@ -139,20 +139,20 @@ function renderSessionList(sessions) {
 
 function statusLabel(status) {
   switch (status) {
-    case "RUNNING": return "実行中";
-    case "WAITING_FOR_INPUT": return "入力待ち";
-    case "ERROR": return "エラー";
-    case "FINISHED": return "終了";
+    case "RUNNING": return "Running";
+    case "WAITING_FOR_INPUT": return "Waiting";
+    case "ERROR": return "Error";
+    case "FINISHED": return "Finished";
     default: return status;
   }
 }
 
-// ── セッション詳細 ────────────────────────────────────────────────────────
+// ── Session detail ────────────────────────────────────────────────────────
 
 async function selectSession(id) {
   selectedId = id;
-  setActionStatus(""); // 前のセッションの実行結果メッセージをクリア
-  renderSessionList(sessionsCache); // selected 強調を反映
+  setActionStatus(""); // clear the result message from the previous session
+  renderSessionList(sessionsCache); // reflect the selected highlight
 
   const session = sessionsCache.find((s) => s.id === id);
   if (session) renderDetailHeader(session);
@@ -171,22 +171,22 @@ function renderDetailHeader(session) {
   badge.textContent = statusLabel(session.status);
 
   $("detail-category").textContent = session.waiting_category
-    ? `カテゴリ: ${session.waiting_category}`
+    ? `Category: ${session.waiting_category}`
     : "";
   $("detail-updated").textContent = session.last_updated_at
-    ? `更新: ${formatTime(session.last_updated_at)}`
+    ? `Updated: ${formatTime(session.last_updated_at)}`
     : "";
 
   renderActions(session);
 }
 
-// ── アクション ────────────────────────────────────────────────────────────
+// ── Actions ────────────────────────────────────────────────────────────
 
 function renderActions(session) {
   const bar = $("action-bar");
   bar.innerHTML = "";
 
-  // 入力待ちのセッションに対してのみ、OPERATOR 以上に操作ボタンを表示
+  // Show action buttons to OPERATOR+ only for sessions waiting for input
   if (!CAN_OPERATE() || session.status !== "WAITING_FOR_INPUT") {
     hide(bar);
     return;
@@ -200,11 +200,11 @@ function renderActions(session) {
     bar.appendChild(btn);
   }
 
-  // 任意テキスト送信（SEND_TEXT）: 入力欄 + 送信ボタン
+  // Arbitrary text send (SEND_TEXT): text input + send button
   const input = document.createElement("input");
   input.type = "text";
   input.className = "text-input";
-  input.placeholder = "送信するテキスト";
+  input.placeholder = "Text to send";
   input.maxLength = MAX_TEXT_LENGTH;
 
   const sendBtn = document.createElement("button");
@@ -213,7 +213,7 @@ function renderActions(session) {
   sendBtn.addEventListener("click", () => {
     const text = input.value;
     if (text.trim() === "") {
-      setActionStatus("テキストを入力してください。");
+      setActionStatus("Please enter some text.");
       return;
     }
     doAction(session, "SEND_TEXT", text).then(() => { input.value = ""; });
@@ -226,45 +226,45 @@ function renderActions(session) {
 
 async function doAction(session, actionType, textPayload = null) {
   const label = ACTION_LABELS[actionType];
-  const target = `${session.tmux_name} に送信しますか?`;
+  const target = `Send to ${session.tmux_name}?`;
   const message = actionType === "SEND_TEXT"
-    ? `「${textPayload}」を ${target}`
-    : `「${label}」を ${target}`;
+    ? `Send "${textPayload}" — ${target}`
+    : `Send "${label}" — ${target}`;
   if (!confirm(message)) return;
 
-  // 冪等キー: 二重送信を防ぐためクリックごとに一意な値を生成
+  // Idempotency key: generate a unique value per click to prevent double-send
   const idempotencyKey =
     `${session.id}-${actionType}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const body = { action_type: actionType, idempotency_key: idempotencyKey };
   if (textPayload !== null) body.text_payload = textPayload;
 
-  // 1) 作成（PENDING_CONFIRM）
+  // 1) Create (PENDING_CONFIRM)
   let resp = await api(`/api/sessions/${session.id}/actions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (resp.status !== 200) {
-    setActionStatus(`操作の作成に失敗しました (${resp.status})`);
+    setActionStatus(`Failed to create the action (${resp.status})`);
     return;
   }
   const action = await resp.json();
 
-  // 2) 確認（CONFIRMED）— ここで初めて Agent が実行可能になる
+  // 2) Confirm (CONFIRMED) — only now can the Agent execute it
   resp = await api(`/api/actions/${action.id}/confirm`, { method: "POST" });
   if (resp.status !== 200) {
-    setActionStatus(`操作の確認に失敗しました (${resp.status})`);
+    setActionStatus(`Failed to confirm the action (${resp.status})`);
     return;
   }
 
-  setActionStatus(`「${label}」を送信しました。実行待ち...`);
+  setActionStatus(`Sent "${label}". Waiting for execution...`);
   pollAction(action.id);
 }
 
 async function pollAction(actionId, attempt = 0) {
   if (attempt >= 15) {
-    setActionStatus("実行結果の確認がタイムアウトしました。");
+    setActionStatus("Timed out waiting for the execution result.");
     return;
   }
   const resp = await api(`/api/actions/${actionId}`);
@@ -272,13 +272,13 @@ async function pollAction(actionId, attempt = 0) {
 
   const action = await resp.json();
   if (action.status === "EXECUTED") {
-    setActionStatus("実行されました ✓");
+    setActionStatus("Executed ✓");
   } else if (action.status === "FAILED") {
-    setActionStatus(`実行に失敗しました: ${action.failure_reason || "不明"}`);
+    setActionStatus(`Execution failed: ${action.failure_reason || "unknown"}`);
   } else if (action.status === "EXPIRED") {
-    setActionStatus("操作が期限切れになりました。");
+    setActionStatus("The action expired.");
   } else {
-    // CONFIRMED のまま — Agent の実行を待って再ポーリング
+    // Still CONFIRMED — wait for the Agent to execute and poll again
     setTimeout(() => pollAction(actionId, attempt + 1), 1000);
   }
 }
@@ -290,14 +290,14 @@ function setActionStatus(text) {
 async function loadSnapshot(id) {
   const resp = await api(`/api/sessions/${id}/snapshot`);
   if (resp.status !== 200) {
-    $("snapshot").textContent = "(スナップショット取得失敗)";
+    $("snapshot").textContent = "(failed to fetch snapshot)";
     return;
   }
   const snap = await resp.json();
-  $("snapshot").textContent = snap.content || "(スナップショットなし)";
+  $("snapshot").textContent = snap.content || "(no snapshot)";
   $("snapshot-meta").textContent = snap.captured_at
-    ? `${snap.line_count} 行 / 取得: ${formatTime(snap.captured_at)}`
-      + (snap.truncated ? " (切り詰めあり)" : "")
+    ? `${snap.line_count} lines / captured: ${formatTime(snap.captured_at)}`
+      + (snap.truncated ? " (truncated)" : "")
     : "";
 }
 
@@ -316,7 +316,7 @@ function connectWebSocket() {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.type === "session_update") {
-      // 一覧を再取得（堅牢・単純）。選択中セッションのスナップショットも更新。
+      // Re-fetch the list (robust and simple). Also refresh the selected session's snapshot.
       refreshSessions();
       if (msg.session_id === selectedId) loadSnapshot(selectedId);
     }
@@ -334,6 +334,6 @@ function scheduleReconnect() {
   }, 3000);
 }
 
-// ── 起動 ──────────────────────────────────────────────────────────────────
+// ── Startup ──────────────────────────────────────────────────────────────────
 
 init();

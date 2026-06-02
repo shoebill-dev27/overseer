@@ -1,4 +1,4 @@
-/* Overseer フロントエンド — 最小構成のダークテーマ */
+/* Overseer frontend — minimal dark theme */
 
 :root {
   --bg: #0f1115;
@@ -27,7 +27,7 @@ body {
 .view { height: 100vh; }
 .hidden { display: none !important; }
 
-/* ── ログイン ───────────────────────────────────────────── */
+/* ── Login ───────────────────────────────────────────── */
 
 #login-view {
   display: flex;
@@ -44,7 +44,7 @@ body {
 .login-box h1 { margin: 0 0 4px; font-size: 32px; }
 .subtitle { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
 
-/* ── ボタン ─────────────────────────────────────────────── */
+/* ── Buttons ─────────────────────────────────────────────── */
 
 .btn {
   display: inline-block;
@@ -61,7 +61,7 @@ body {
 .btn-primary { background: var(--accent); border-color: var(--accent); }
 .btn-primary:hover { filter: brightness(1.1); }
 
-/* ── トップバー ─────────────────────────────────────────── */
+/* ── Top bar ─────────────────────────────────────────── */
 
 .topbar {
   display: flex;
@@ -76,7 +76,7 @@ body {
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 #user-label { color: var(--muted); font-size: 14px; }
 
-/* ── レイアウト ─────────────────────────────────────────── */
+/* ── Layout ─────────────────────────────────────────── */
 
 .layout {
   display: grid;
@@ -91,7 +91,7 @@ body {
 .sidebar h2 { font-size: 14px; color: var(--muted); margin: 0 0 12px; text-transform: uppercase; }
 .detail { padding: 20px; overflow-y: auto; }
 
-/* ── モバイル: 2カラムを縦積みにして潰れを防ぐ ──────────── */
+/* ── Mobile: stack the two columns vertically to avoid collapse ──────────── */
 @media (max-width: 700px) {
   .layout {
     grid-template-columns: 1fr;
@@ -104,7 +104,7 @@ body {
   .snapshot { max-height: none; }
 }
 
-/* ── セッション一覧 ─────────────────────────────────────── */
+/* ── Session list ─────────────────────────────────────── */
 
 .session-list { list-style: none; margin: 0; padding: 0; }
 .session-item {
@@ -120,7 +120,7 @@ body {
 .session-item .name { font-weight: 600; font-size: 14px; word-break: break-all; }
 .session-item .row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 
-/* ── バッジ ─────────────────────────────────────────────── */
+/* ── Badges ─────────────────────────────────────────────── */
 
 .badge {
   font-size: 12px;
@@ -137,7 +137,7 @@ body {
 .badge-online { background: rgba(34,197,94,0.15); color: var(--running); }
 .badge-offline { background: rgba(239,68,68,0.15); color: var(--error); }
 
-/* ── 詳細 ───────────────────────────────────────────────── */
+/* ── Detail ───────────────────────────────────────────────── */
 
 .detail-empty { color: var(--muted); padding: 40px 0; text-align: center; }
 .detail-header { display: flex; align-items: center; gap: 12px; }
@@ -159,7 +159,7 @@ body {
 }
 .hint { color: var(--muted); font-size: 13px; }
 
-/* ── アクションバー ─────────────────────────────────────── */
+/* ── Action bar ─────────────────────────────────────── */
 
 .action-bar { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
 .action-bar .btn-action {
