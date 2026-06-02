@@ -1,7 +1,8 @@
-"""pytest 共通設定。
+"""Shared pytest configuration.
 
-app を import する前に必須シークレットとテンポラリ DB を環境変数へ設定する。
-（config.py / database.py が import 時に環境変数を読むため、順序が重要）
+Set the required secrets and a temporary DB into environment variables before
+importing the app. (Order matters because config.py / database.py read env vars at
+import time.)
 """
 
 import hashlib
@@ -38,13 +39,13 @@ def _clear_db() -> None:
 
 @pytest.fixture
 def client():
-    """テストごとに空の DB から起動した TestClient を返す。"""
+    """Return a TestClient started from an empty DB for each test."""
     _clear_db()
-    from app.main import app  # lifespan が init_db を実行してスキーマを作成
+    from app.main import app  # lifespan runs init_db to create the schema
     from app.routers.internal import require_loopback
 
-    # TestClient の送信元は "testclient" 固定でループバック判定を通らないため、
-    # /internal のループバック制限のみ無効化する（HMAC 検証は本物のまま）。
+    # The TestClient's source is fixed to "testclient" and fails the loopback check,
+    # so disable only the /internal loopback restriction (HMAC verification stays real).
     app.dependency_overrides[require_loopback] = lambda: None
     try:
         with TestClient(app) as c:
@@ -56,7 +57,7 @@ def client():
 
 @pytest.fixture
 def make_user():
-    """ユーザー＋有効な http_session を直接 DB に作成し、セッショントークンを返す。"""
+    """Create a user + a valid http_session directly in the DB and return the session token."""
 
     def _make(
         role: str = "VIEWER", github_id: str = "1001", github_login: str = "tester"
@@ -83,7 +84,7 @@ def make_user():
 
 
 def sign_agent(body: bytes, timestamp: str | None = None) -> dict[str, str]:
-    """Internal API 用の HMAC ヘッダを生成する（agent/client.py と同一方式）。"""
+    """Generate HMAC headers for the Internal API (same scheme as agent/client.py)."""
     ts = timestamp or str(int(time.time()))
     sig = hmac.new(
         AGENT_HMAC_SECRET.encode(),

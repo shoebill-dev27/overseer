@@ -10,15 +10,15 @@ SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
--- スキーマバージョン管理
+-- Schema version management
 CREATE TABLE IF NOT EXISTS schema_version (
     version    INTEGER NOT NULL,
     applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- ユーザー（GitHub OAuthで作成）
--- github_id は GitHub User ID（数値文字列、不変）
--- github_login は Username（表示用のみ、認証には使わない）
+-- Users (created via GitHub OAuth)
+-- github_id is the GitHub User ID (numeric string, immutable)
+-- github_login is the username (display only, not used for auth)
 CREATE TABLE IF NOT EXISTS users (
     id             INTEGER  PRIMARY KEY AUTOINCREMENT,
     github_id      TEXT     UNIQUE NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at  DATETIME
 );
 
--- HTTPセッション（ログイン状態管理）
+-- HTTP sessions (login state management)
 CREATE TABLE IF NOT EXISTS http_sessions (
     token       TEXT     PRIMARY KEY,
     user_id     INTEGER  NOT NULL REFERENCES users(id),
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS http_sessions (
     user_agent  TEXT
 );
 
--- Claude Codeセッション（tmux監視対象）
+-- Claude Code sessions (tmux monitoring targets)
 CREATE TABLE IF NOT EXISTS claude_sessions (
     id               INTEGER  PRIMARY KEY AUTOINCREMENT,
     tmux_name        TEXT     NOT NULL UNIQUE,
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS claude_sessions (
     finished_at      DATETIME
 );
 
--- セッションスナップショット（最新状態のみ保持、スクラビング済み）
--- 履歴ではなく現在の状態。UPSERT（INSERT OR REPLACE）で上書き更新。
+-- Session snapshot (keeps only the latest state, scrubbed)
+-- Current state, not history. Overwritten via UPSERT (INSERT OR REPLACE).
 CREATE TABLE IF NOT EXISTS session_snapshots (
     session_id   INTEGER  PRIMARY KEY REFERENCES claude_sessions(id),
     captured_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS session_snapshots (
     truncated    BOOLEAN  NOT NULL DEFAULT FALSE
 );
 
--- アクション（Phase 2〜）
+-- Actions (Phase 2+)
 CREATE TABLE IF NOT EXISTS actions (
     id               INTEGER  PRIMARY KEY AUTOINCREMENT,
     session_id       INTEGER  NOT NULL REFERENCES claude_sessions(id),
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS actions (
     failure_reason   TEXT
 );
 
--- 監査ログ（INSERT ONLY、アプリ層からのUPDATE/DELETE禁止）
+-- Audit log (INSERT ONLY; no UPDATE/DELETE from the app layer)
 CREATE TABLE IF NOT EXISTS audit_log (
     id          INTEGER  PRIMARY KEY AUTOINCREMENT,
     occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     user_agent  TEXT
 );
 
--- Agent生存確認（シングルトン、id=1固定）
+-- Agent liveness (singleton, fixed id=1)
 CREATE TABLE IF NOT EXISTS agent_status (
     id            INTEGER  PRIMARY KEY CHECK(id = 1),
     last_seen_at  DATETIME NOT NULL,
@@ -107,7 +107,7 @@ SCHEMA_VERSION = 1
 
 
 async def get_db() -> aiosqlite.Connection:
-    """FastAPI依存性注入用: リクエストごとにDB接続を返す。"""
+    """For FastAPI dependency injection: returns a DB connection per request."""
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
@@ -118,7 +118,7 @@ async def get_db() -> aiosqlite.Connection:
 
 
 async def init_db() -> None:
-    """スキーマを作成し、schema_versionを初期化する。"""
+    """Create the schema and initialize schema_version."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(SCHEMA)
 

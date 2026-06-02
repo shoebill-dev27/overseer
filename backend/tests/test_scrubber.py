@@ -1,4 +1,4 @@
-"""scrubber.scrub のシークレット除去テスト。"""
+"""Secret-removal tests for scrubber.scrub."""
 
 from app.scrubber import scrub
 

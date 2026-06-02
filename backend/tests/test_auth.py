@@ -1,4 +1,4 @@
-"""ロール階層判定 _has_role と OAuth リトライ _github_request の単体テスト。"""
+"""Unit tests for role-hierarchy check _has_role and OAuth retry _github_request."""
 
 import asyncio
 
@@ -32,7 +32,7 @@ def test_unknown_role_fails():
 
 
 def test_github_request_retries_then_succeeds(monkeypatch):
-    """一時的な接続エラーが続いた後に成功すれば、その応答を返す。"""
+    """If transient connection errors are followed by success, return that response."""
     calls = {"n": 0}
     sentinel = object()
 
@@ -51,7 +51,7 @@ def test_github_request_retries_then_succeeds(monkeypatch):
 
 
 def test_github_request_raises_502_after_exhausting_retries(monkeypatch):
-    """全試行が接続エラーなら 502 を送出する。"""
+    """If all attempts are connection errors, raise 502."""
 
     async def always_fail(self, method, url, **kwargs):
         raise httpx.ConnectTimeout("boom")
