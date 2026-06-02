@@ -159,6 +159,7 @@ async def github_callback(
         key=COOKIE_NAME,
         value=session_token,
         httponly=True,
+        secure=True,
         samesite="strict",
         max_age=86400,
     )
