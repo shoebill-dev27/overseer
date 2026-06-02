@@ -1,4 +1,4 @@
-"""tmux_monitor のテスト（subprocess をモックして tmux 非依存にする）。"""
+"""Tests for tmux_monitor (mock subprocess to be tmux-independent)."""
 
 import subprocess
 import types

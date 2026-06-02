@@ -24,8 +24,8 @@ _BASE = Path(__file__).parent.parent
 _AGENT_CONFIG = _BASE / "config" / "agent.yaml"
 _PATTERNS_CONFIG = _BASE / "config" / "waiting_patterns.yaml"
 
-# アクション種別 → tmux send-keys のトークン列
-# STOP は Claude Code の中断キー（Escape）。
+# Action type → tmux send-keys token sequence
+# STOP is Claude Code's interrupt key (Escape).
 _ACTION_KEYS: dict[str, list[str]] = {
     "SEND_Y": ["y", "Enter"],
     "SEND_N": ["n", "Enter"],
@@ -73,10 +73,10 @@ def startup_check() -> str:
 
 
 async def execute_pending_actions(action_flags: dict[str, bool]) -> None:
-    """確認済み操作を取得し、設定で許可されたものを tmux に送信して結果を報告する。
+    """Fetch confirmed actions, send the config-allowed ones to tmux, and report results.
 
-    action_flags は agent.yaml の actions セクション。Agent 側を最終ゲートとして、
-    無効化された種別は実行せず FAILED を報告する。
+    action_flags is the actions section of agent.yaml. As the final gate on the Agent
+    side, disabled action types are not executed and are reported as FAILED.
     """
     try:
         actions = await fetch_pending_actions()
