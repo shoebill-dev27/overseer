@@ -1,33 +1,34 @@
-# Local Agent 設定
+# Local Agent configuration
 
 monitoring:
-  # 監視対象tmuxセッションのプレフィックス（前方一致）
+  # Prefix of tmux sessions to monitor (prefix match)
   session_prefix: "claude-"
-  # tmux capture-pane ポーリング間隔（秒）
+  # tmux capture-pane poll interval (seconds)
   poll_interval_seconds: 10
-  # capture-pane で取得する行数
+  # Number of lines to capture with capture-pane
   capture_lines: 300
-  # waiting_patterns.yaml の動的リロード間隔（秒）
+  # Hot-reload interval for waiting_patterns.yaml (seconds)
   pattern_reload_seconds: 60
 
 backend:
-  # FastAPI バックエンドURL（localhost固定）
+  # FastAPI backend URL (fixed to localhost)
   url: "http://127.0.0.1:8000"
-  # Heartbeat 送信間隔（秒）
+  # Heartbeat send interval (seconds)
   heartbeat_interval_seconds: 60
-  # リクエストタイムアウト（秒）
+  # Request timeout (seconds)
   request_timeout_seconds: 5
 
 notification:
-  # 同一セッションの再通知抑制（秒）
-  cooldown_seconds: 1800  # 30分
+  # Suppress re-notification for the same session (seconds)
+  cooldown_seconds: 1800  # 30 minutes
 
 actions:
-  # Phase 2で有効化するアクション
+  # Actions enabled in Phase 2
   STOP: true
   SEND_Y: true
   SEND_N: true
   SEND_ENTER: true
-  # 任意テキスト送信。実装済みだが安全のため既定で無効。有効化するとブラウザから
-  # tmux へ任意文字列を送れるため、運用上の判断で明示的に true にすること。
+  # Arbitrary text send. Implemented but disabled by default for safety. Enabling it
+  # lets the browser send arbitrary strings to tmux, so set it to true explicitly as
+  # an operational decision.
   SEND_TEXT: false

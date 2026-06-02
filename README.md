@@ -1,293 +1,321 @@
 # Overseer
 
-**Claude Code Remote Operations Console** — ローカルで走る複数の Claude Code（tmux）セッションを
-リモートから「監視」し、入力待ちになったら承認操作（Y/N/Enter/中断）を送り込むためのツール。
+**Claude Code Remote Operations Console** — a tool to remotely "watch" multiple
+Claude Code (tmux) sessions running locally, and send approval actions
+(Y/N/Enter/STOP) when a session is waiting for input.
 
-外出先や別端末から、Tailscale / localhost 越しに「あのセッション、承認待ちで止まってないか？」を
-確認し、必要なら一押しで先へ進められる状態を作ることが目的。
-
----
-
-## これは何を解決するか
-
-Claude Code を `tmux` 上で長時間走らせると、こちらの承認（`Do you want to proceed?` など）で
-頻繁に停止する。端末に張り付いていないと進まない。Overseer は次を肩代わりする:
-
-- 監視対象 tmux セッションを定期的に覗き、**RUNNING / WAITING_FOR_INPUT / FINISHED** を判定
-- 画面内容（スナップショット）を**シークレットを伏字化した上で**Web UIに表示
-- ブラウザから **Y / N / Enter / 中断(STOP)**（および任意テキスト送信）を、二段階確認つきで送信
+The goal is to be able to check, from anywhere or another device over
+Tailscale / localhost, "is that session stuck waiting for approval?" and, if
+needed, push it forward with a single tap.
 
 ---
 
-## アーキテクチャ
+## What it solves
 
-3つの独立コンポーネント。Agent と Backend は **同一ホスト上の localhost** で通信する前提。
+When you run Claude Code on `tmux` for long stretches, it frequently stops for
+your approval (`Do you want to proceed?`, etc.). Nothing moves unless you are
+glued to the terminal. Overseer takes over the following:
+
+- Periodically peeks at the monitored tmux sessions and classifies them as
+  **RUNNING / WAITING_FOR_INPUT / FINISHED**.
+- Shows the screen contents (snapshot) in a web UI, **with secrets redacted**.
+- Sends **Y / N / Enter / STOP** (and arbitrary text) from the browser, with
+  two-step confirmation.
+
+---
+
+## Architecture
+
+Three independent components. The Agent and Backend are assumed to communicate
+over **localhost on the same host**.
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
-   │  開発マシン（Claude Code が走っているホスト）                  │
+   │  Dev machine (host where Claude Code runs)                     │
    │                                                                │
    │   tmux: claude-foo ┐                                           │
    │   tmux: claude-bar ┤  capture-pane / send-keys                 │
    │                    ▼                                           │
-   │            ┌──────────────┐   HMAC署名つき HTTP (/internal)    │
+   │            ┌──────────────┐   HMAC-signed HTTP (/internal)     │
    │            │ Local Agent  │ ───────────────────────────┐       │
    │            │ (agent/)     │                            ▼       │
    │            └──────────────┘                   ┌──────────────┐ │
    │                                               │  FastAPI     │ │
    │                                               │  Backend     │ │
-   │   ブラウザ ◀── WebSocket / REST ──────────────│  (backend/)  │ │
-   │   (frontend/) GitHub OAuth ロール認可          │  + SQLite    │ │
+   │   Browser ◀── WebSocket / REST ───────────────│  (backend/)  │ │
+   │   (frontend/) GitHub OAuth role authz          │  + SQLite    │ │
    │                                               └──────────────┘ │
    └──────────────────────────────────────────────────────────────┘
 ```
 
 ### 1. Local Agent (`agent/`)
-- `tmux` セッション（既定では `claude-` で始まる名前）を `poll_interval_seconds`（既定10秒）ごとに監視。
-- `tmux capture-pane` で画面を取得 → `config/waiting_patterns.yaml` の正規表現で入力待ちを検知。
-- 取得テキストは送信前に**スクラビング**（APIキー・トークン・パスワード等を `[REDACTED]` に置換）。
-- 状態とスナップショットを Backend の Internal API へ push。`heartbeat` で生存通知。
-- Backend にある **CONFIRMED** 操作を取得し、`config/agent.yaml` で許可されたものだけを
-  `tmux send-keys` で実行（Agent 側が最終ゲート）。
+- Watches `tmux` sessions (by default, names starting with `claude-`) every
+  `poll_interval_seconds` (default 10s).
+- Captures the screen with `tmux capture-pane`, then detects "waiting for input"
+  via the regexes in `config/waiting_patterns.yaml`.
+- Scrubs the captured text before sending (replaces API keys, tokens, passwords,
+  etc. with `[REDACTED]`).
+- Pushes status and snapshots to the Backend's Internal API. Reports liveness via
+  `heartbeat`.
+- Fetches **CONFIRMED** actions from the Backend and executes only the ones
+  allowed in `config/agent.yaml` via `tmux send-keys` (the Agent is the final
+  gate).
 
 ### 2. Backend (`backend/`)
-- FastAPI + SQLite（aiosqlite, WALモード）。フロントの静的配信も担う。
-- **GitHub OAuth 2.0** ログイン + ユーザーID ホワイトリスト + ロール認可。
-- セッション状態を保存し、変化を **WebSocket** で全クライアントへブロードキャスト。
-- 操作の**二段階確認**（作成→確認）と監査ログ（INSERT専用）。
+- FastAPI + SQLite (aiosqlite, WAL mode). Also serves the frontend statically.
+- **GitHub OAuth 2.0** login + user-ID whitelist + role authorization.
+- Stores session state and broadcasts changes to all clients over **WebSocket**.
+- Two-step confirmation of actions (create → confirm) and an audit log
+  (INSERT-only).
 
 ### 3. Frontend (`frontend/`)
-- 素の HTML/CSS/JS（ビルド不要）。Backend が `/` から配信。
-- 左にセッション一覧、右に詳細スナップショットと操作バー。WebSocket でリアルタイム更新。
+- Plain HTML/CSS/JS (no build step). Served by the Backend at `/`.
+- Session list on the left; detail snapshot and action bar on the right.
+  Real-time updates over WebSocket.
 
 ---
 
-## データフロー（状態とアクション）
+## Data flow (status and actions)
 
-**状態の流れ（監視）**
+**Status flow (monitoring)**
 ```
-tmux画面 → capture-pane → パターン照合 → scrub → POST /internal/sessions/update
-        → SQLite保存 → WebSocket broadcast → ブラウザ更新
+tmux screen → capture-pane → pattern match → scrub → POST /internal/sessions/update
+            → store in SQLite → WebSocket broadcast → browser update
 ```
 
-**アクションの流れ（操作、二段階確認）**
+**Action flow (operation, two-step confirmation)**
 ```
-ブラウザ: POST /api/sessions/{id}/actions        → status=PENDING_CONFIRM
-ブラウザ: POST /api/actions/{id}/confirm (120秒以内) → status=CONFIRMED
-Agent:   GET  /internal/actions/pending          → CONFIRMED を取得
-Agent:   tmux send-keys 実行                      → POST /internal/actions/{id}/result
-                                                  → status=EXECUTED または FAILED
+Browser: POST /api/sessions/{id}/actions          → status=PENDING_CONFIRM
+Browser: POST /api/actions/{id}/confirm (within 120s) → status=CONFIRMED
+Agent:   GET  /internal/actions/pending           → fetch CONFIRMED
+Agent:   run tmux send-keys                        → POST /internal/actions/{id}/result
+                                                   → status=EXECUTED or FAILED
 ```
-確認されないまま 120 秒（`ACTION_TTL_SECONDS`）を過ぎた操作は **EXPIRED** に落ちる。
-同一 `idempotency_key` の操作は重複作成されない。
+An action that is not confirmed within 120s (`ACTION_TTL_SECONDS`) drops to
+**EXPIRED**. Actions with the same `idempotency_key` are not created twice.
 
 ---
 
-## ロールと権限
+## Roles and permissions
 
-ロールはランク制（上位は下位を包含）。初回ログイン時は **VIEWER** で作成され、昇格はDBを直接更新する。
+Roles are ranked (higher includes lower). On first login a user is created as
+**VIEWER**; promotion is done by updating the DB directly.
 
-| ロール    | できること                                        |
+| Role      | Can do                                            |
 |-----------|---------------------------------------------------|
-| VIEWER    | セッション一覧 / 詳細 / スナップショットの閲覧      |
-| OPERATOR  | 上記 + アクション作成・確認（Y/N/Enter/STOP、任意テキスト）|
-| ADMIN     | 上記すべて（現状 ADMIN 専用エンドポイントは無し）   |
+| VIEWER    | View session list / detail / snapshot             |
+| OPERATOR  | Above + create/confirm actions (Y/N/Enter/STOP, arbitrary text) |
+| ADMIN     | All of the above (no ADMIN-only endpoints yet)    |
 
 ---
 
-## セットアップ
+## Setup
 
-### 前提
+### Prerequisites
 - Python 3.10+
-- `tmux`（Agent が監視・操作に使用）
-- 監視したい Claude Code を `claude-<名前>` という名前の tmux セッションで起動しておく
-  （プレフィックスは `config/agent.yaml` の `session_prefix` で変更可）
-- GitHub OAuth App（ログイン用）
+- `tmux` (used by the Agent for monitoring and operations)
+- Start the Claude Code you want to monitor in a tmux session named
+  `claude-<name>` (the prefix is configurable via `session_prefix` in
+  `config/agent.yaml`)
+- A GitHub OAuth App (for login)
 
-### 手順
+### Steps
 ```bash
-# 1. 依存をインストール（backend / agent それぞれに venv を作る）
+# 1. Install dependencies (creates a venv for backend / agent each)
 make setup
 
-# 2. 環境変数を用意（テンプレからコピーして実値を記入）
+# 2. Prepare environment variables (copy from templates and fill in real values)
 cp backend/.env.example backend/.env
 cp agent/.env.example   agent/.env
-#  - SECRET_KEY と AGENT_HMAC_SECRET を生成して両方に設定
-#    （AGENT_HMAC_SECRET は backend/agent で同一値にする）
-#  - GitHub OAuth の各値、ALLOWED_GITHUB_USER_IDS を記入
+#  - Generate SECRET_KEY and AGENT_HMAC_SECRET and set both
+#    (AGENT_HMAC_SECRET must be identical in backend/agent)
+#  - Fill in the GitHub OAuth values and ALLOWED_GITHUB_USER_IDS
 
-# 3. DB 初期化（SQLite スキーマ作成）
+# 3. Initialize the DB (create the SQLite schema)
 make db-init
 ```
 
-`SECRET_KEY` / `AGENT_HMAC_SECRET` の生成例:
+Example of generating `SECRET_KEY` / `AGENT_HMAC_SECRET`:
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 ---
 
-## 起動
+## Running
 
 ```bash
-make run-backend   # FastAPI + UI を 0.0.0.0:8000 で起動
-make run-agent     # Local Agent を起動（別ターミナル）
-# または
-make dev           # backend と agent を同時起動
+make run-backend   # Start FastAPI + UI on 0.0.0.0:8000
+make run-agent     # Start the Local Agent (in another terminal)
+# or
+make dev           # Start backend and agent together
 ```
 
-起動後、ブラウザで `http://127.0.0.1:8000` を開き「GitHub でログイン」。
-起動時の self-check は **HEALTHY / DEGRADED / FAILED** を標準出力に表示する
-（`SECRET_KEY` と `AGENT_HMAC_SECRET` が無いと FAILED で停止）。
+After starting, open `http://127.0.0.1:8000` in a browser and "Log in with
+GitHub". The startup self-check prints **HEALTHY / DEGRADED / FAILED** to stdout
+(without `SECRET_KEY` and `AGENT_HMAC_SECRET` it stops with FAILED).
 
 ---
 
-## 監視対象セッションを用意する
+## Preparing sessions to monitor
 
-Agent は **セッション名が `claude-` で始まる tmux セッション**だけを監視する
-（プレフィックスは `config/agent.yaml` の `session_prefix`）。判定はセッション名の
-前方一致のみで、中で動いているプログラムは問わない。
+The Agent only watches **tmux sessions whose name starts with `claude-`** (the
+prefix is `session_prefix` in `config/agent.yaml`). The check is a name prefix
+match only; it does not care what program is running inside.
 
 ```bash
-# 新規に作って、その中で Claude Code を起動する
+# Create a new one and start Claude Code inside it
 tmux new -s claude-myproject
 
-# すでにあるセッションを対象にしたい場合は改名する
-tmux rename-session -t 既存のセッション名 claude-myproject
+# To target an existing session, rename it
+tmux rename-session -t existing-session-name claude-myproject
 ```
 
-数秒後（ポーリング間隔は既定10秒）に Web UI のセッション一覧へ `claude-myproject`
-が現れる。
+A few seconds later (default poll interval is 10s), `claude-myproject` appears in
+the web UI's session list.
 
 ---
 
-## リモートアクセス（Tailscale Serve で HTTPS 化）
+## Remote access (HTTPS via Tailscale Serve)
 
-外出先やスマホから使う場合は、公開せず **Tailscale 上で HTTPS 配信**するのが手軽。
+To use it on the go or from a phone, the easiest approach is to serve it over
+**HTTPS on Tailscale** without exposing it publicly.
 
 ```bash
-# backend は localhost のみにバインド（外部へは直接公開しない）
+# Bind the backend to localhost only (do not expose it directly)
 cd backend && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# Tailscale Serve で 443 → backend をプロキシ（証明書は自動発行・tailnet 限定）
+# Proxy 443 → backend with Tailscale Serve (cert auto-issued, tailnet-only)
 tailscale serve --bg 8000
 ```
 
-これで `https://<machine>.<tailnet>.ts.net`（ポート番号なし・正規証明書）から
-tailnet 内の全デバイス（スマホ含む）でアクセスできる。あわせて次を**同じ URL に揃える**:
+This makes it reachable at `https://<machine>.<tailnet>.ts.net` (no port number,
+valid certificate) from every device in the tailnet (including phones). Also
+**align all of the following to the same URL**:
 
-- `backend/.env` の `APP_BASE_URL` と `GITHUB_CALLBACK_URL`
-- GitHub OAuth App の Authorization callback URL
-  （`https://<machine>.<tailnet>.ts.net/auth/github/callback`）
+- `APP_BASE_URL` and `GITHUB_CALLBACK_URL` in `backend/.env`
+- The Authorization callback URL of the GitHub OAuth App
+  (`https://<machine>.<tailnet>.ts.net/auth/github/callback`)
 
-3つが食い違うと OAuth の `redirect_uri` 不一致でログインできないので注意。
+If the three disagree, login fails with an OAuth `redirect_uri` mismatch, so be
+careful.
 
-> `tailscale serve` は root/operator 権限が必要。一度
-> `sudo tailscale set --operator=$USER` しておくと以降は sudo なしで実行でき、
-> Serve 設定は tailscaled に永続化されて再起動後も残る。
+> `tailscale serve` requires root/operator privileges. Running
+> `sudo tailscale set --operator=$USER` once lets you run it without sudo
+> afterward, and the Serve config persists in tailscaled across restarts.
 
 ---
 
-## 設定ファイル
+## Configuration files
 
-| ファイル                        | 役割                                                          |
+| File                            | Role                                                          |
 |---------------------------------|---------------------------------------------------------------|
-| `backend/.env`                  | Backend のシークレット・OAuth・ホワイトリスト（テンプレ: `.env.example`） |
-| `agent/.env`                    | Agent の HMAC シークレット・接続先（テンプレ: `.env.example`） |
-| `config/agent.yaml`             | 監視間隔・対象プレフィックス・許可アクション種別など           |
-| `config/waiting_patterns.yaml`  | 入力待ち検知の正規表現。**Agent再起動なしで60秒ごとに動的リロード** |
+| `backend/.env`                  | Backend secrets, OAuth, whitelist (template: `.env.example`)  |
+| `agent/.env`                    | Agent HMAC secret, connection target (template: `.env.example`) |
+| `config/agent.yaml`             | Poll interval, target prefix, allowed action types, etc.      |
+| `config/waiting_patterns.yaml`  | Regexes for waiting-for-input detection. **Hot-reloaded every 60s without restarting the Agent** |
 
-> 補足: 接続先 URL は `agent/.env` の `BACKEND_URL` が使われる（`agent.yaml` の `backend.url` は
-> ポーリング間隔等のメタ設定用）。
+> Note: the connection URL uses `BACKEND_URL` in `agent/.env` (`backend.url` in
+> `agent.yaml` is for meta settings such as the poll interval).
 
 ---
 
-## API 概要
+## API overview
 
-| メソッド | パス                                | 認可        | 用途                     |
+| Method   | Path                                | Authz       | Purpose                  |
 |----------|-------------------------------------|-------------|--------------------------|
-| GET      | `/auth/github`                      | —           | OAuth 開始               |
-| GET      | `/auth/github/callback`             | —           | OAuth コールバック       |
-| POST     | `/auth/logout`                      | VIEWER      | ログアウト               |
-| GET      | `/auth/me`                          | VIEWER      | 自分の情報               |
-| GET      | `/api/sessions`                     | VIEWER      | セッション一覧 + Agent状態 |
-| GET      | `/api/sessions/{id}`                | VIEWER      | セッション詳細           |
-| GET      | `/api/sessions/{id}/snapshot`       | VIEWER      | 画面スナップショット     |
-| POST     | `/api/sessions/{id}/actions`        | OPERATOR    | アクション作成（要確認） |
-| POST     | `/api/actions/{id}/confirm`         | OPERATOR    | アクション確認           |
-| GET      | `/api/actions/{id}`                 | VIEWER      | アクション状態取得       |
-| WS       | `/ws/sessions`                      | Cookie認証  | 状態のリアルタイム配信   |
-| GET      | `/health`                           | —           | ヘルスチェック           |
-| `/internal/*`                      | —          | HMAC署名    | Agent 専用（下記参照）   |
+| GET      | `/auth/github`                      | —           | Start OAuth              |
+| GET      | `/auth/github/callback`             | —           | OAuth callback           |
+| POST     | `/auth/logout`                      | VIEWER      | Log out                  |
+| GET      | `/auth/me`                          | VIEWER      | Own info                 |
+| GET      | `/api/sessions`                     | VIEWER      | Session list + Agent status |
+| GET      | `/api/sessions/{id}`                | VIEWER      | Session detail           |
+| GET      | `/api/sessions/{id}/snapshot`       | VIEWER      | Screen snapshot          |
+| POST     | `/api/sessions/{id}/actions`        | OPERATOR    | Create action (needs confirm) |
+| POST     | `/api/actions/{id}/confirm`         | OPERATOR    | Confirm action           |
+| GET      | `/api/actions/{id}`                 | VIEWER      | Get action status        |
+| WS       | `/ws/sessions`                      | Cookie auth | Real-time status feed    |
+| GET      | `/health`                           | —           | Health check             |
+| `/internal/*`                      | HMAC sig    | Agent-only (see below)   |
 
-`/internal/*`（`sessions/update`・`heartbeat`・`actions/pending`・`actions/{id}/result`）は
-`X-Agent-Timestamp` / `X-Agent-Signature` による HMAC-SHA256 認証（タイムスタンプ ±300秒）。
-
----
-
-## セキュリティモデル
-
-- **公開ネットワークに晒さない前提**。Tailscale や localhost からのアクセスを想定。
-- CORS は `APP_BASE_URL` のみ許可。セキュリティヘッダ（CSP / X-Frame-Options 等）を付与。
-- GitHub の**数値ユーザーID**でホワイトリスト認可（username は表示用のみ）。
-- HTTP セッションはサーバ側保存のランダムトークン（24時間 TTL、revoke 可）。
-- セッション Cookie は `HttpOnly` / `SameSite=Strict` / `Secure`（HTTPS 配信時に平文では送出しない）。
-- Agent ↔ Backend は HMAC 署名 + タイムスタンプで認証。さらに `/internal` はクライアントIPを
-  **ループバック（127.0.0.1 / ::1）に限定**し、外部送信元は HMAC 以前に 403 で拒否する。
-- スナップショット・ログは保存/送信前に**シークレット伏字化**（`scrubber.py`）。
-
-### 既知の制約・注意点（要改善）
-- `/internal` のループバック制限は送信元IPに依存するため、`/internal` を localhost へ転送する
-  リバースプロキシを前段に置く場合は、プロキシ側で `/internal` を遮断すること
-  （プロキシ経由だと送信元が 127.0.0.1 に見えるため）。
-- `SECRET_KEY` は起動時の存在チェックのみで、現状コードでは署名に未使用（将来用に予約）。
-- OAuth の state はプロセス内メモリ保持（単一プロセス前提。再起動でログイン途中状態は消える）。
-- `SEND_TEXT`（任意テキスト送信）は実装済みだが、安全のため `config/agent.yaml` で
-  **既定無効**。有効化するとブラウザから tmux へ任意文字列を送れるため、運用判断で明示的に
-  `SEND_TEXT: true` にすること（OPERATOR 以上＋二段階確認は常に必須）。
+`/internal/*` (`sessions/update`, `heartbeat`, `actions/pending`,
+`actions/{id}/result`) uses HMAC-SHA256 authentication via `X-Agent-Timestamp` /
+`X-Agent-Signature` (timestamp ±300s).
 
 ---
 
-## 開発
+## Security model
+
+- **Assumes it is not exposed to a public network.** Access is expected over
+  Tailscale or localhost.
+- CORS allows `APP_BASE_URL` only. Security headers (CSP / X-Frame-Options, etc.)
+  are added.
+- Whitelist authorization by GitHub **numeric user ID** (username is for display
+  only).
+- HTTP sessions are random tokens stored server-side (24h TTL, revocable).
+- The session cookie is `HttpOnly` / `SameSite=Strict` / `Secure` (not sent in
+  cleartext when served over HTTPS).
+- Agent ↔ Backend is authenticated with an HMAC signature + timestamp. In
+  addition, `/internal` restricts the client IP to **loopback (127.0.0.1 / ::1)**
+  and rejects external sources with 403 before HMAC.
+- Snapshots and logs are **secret-scrubbed** before being stored/sent
+  (`scrubber.py`).
+
+### Known constraints / caveats (to improve)
+- The loopback restriction on `/internal` depends on the source IP, so if you put
+  a reverse proxy in front that forwards `/internal` to localhost, block
+  `/internal` at the proxy (via the proxy the source appears as 127.0.0.1).
+- `SECRET_KEY` is only existence-checked at startup; it is not used for signing in
+  the current code (reserved for future use).
+- The OAuth state is held in process memory (assumes a single process; an
+  in-progress login is lost on restart).
+- `SEND_TEXT` (arbitrary text) is implemented but **disabled by default** in
+  `config/agent.yaml` for safety. Enabling it lets the browser send arbitrary
+  strings to tmux, so set `SEND_TEXT: true` explicitly as an operational decision
+  (OPERATOR or higher + two-step confirmation are always required).
+
+---
+
+## Development
 
 ```bash
-make lint    # ruff check + ruff format --check（backend / agent）
-make test    # pytest（backend 43 + agent 19 = 62 件）
+make lint    # ruff check + ruff format --check (backend / agent)
+make test    # pytest (backend 43 + agent 19 = 62 tests)
 ```
 
-### プロジェクト構成
+### Project layout
 ```
 overseer/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py          # FastAPI 起動・self-check・静的配信
-│   │   ├── config.py        # 環境変数ロード
-│   │   ├── database.py      # SQLite スキーマ・接続
-│   │   ├── auth.py          # ロール認可の依存性
-│   │   ├── sessions.py      # HTTPセッション（Cookie）管理
-│   │   ├── audit.py         # 監査ログ
-│   │   ├── scrubber.py      # シークレット伏字化
-│   │   ├── ws_manager.py    # WebSocket 接続管理
+│   │   ├── main.py          # FastAPI startup, self-check, static serving
+│   │   ├── config.py        # Environment variable loading
+│   │   ├── database.py      # SQLite schema and connection
+│   │   ├── auth.py          # Role authorization dependencies
+│   │   ├── sessions.py      # HTTP session (cookie) management
+│   │   ├── audit.py         # Audit log
+│   │   ├── scrubber.py      # Secret scrubbing
+│   │   ├── ws_manager.py    # WebSocket connection management
 │   │   └── routers/         # auth / sessions / actions / internal / ws
 │   └── tests/
 ├── agent/
-│   ├── agent.py             # 監視メインループ
-│   ├── client.py            # HMAC署名つき Internal API クライアント
+│   ├── agent.py             # Monitoring main loop
+│   ├── client.py            # HMAC-signed Internal API client
 │   ├── tmux_monitor.py      # capture-pane / send-keys / list-sessions
-│   ├── pattern_matcher.py   # 入力待ちパターン照合（動的リロード）
-│   ├── scrubber.py          # シークレット伏字化
+│   ├── pattern_matcher.py   # Waiting-pattern matching (hot reload)
+│   ├── scrubber.py          # Secret scrubbing
 │   └── tests/
-├── frontend/                # 素の HTML / CSS / JS
+├── frontend/                # Plain HTML / CSS / JS
 ├── config/                  # agent.yaml / waiting_patterns.yaml
 └── Makefile
 ```
 
 ---
 
-## ステータス
+## Status
 
-- **Phase 1**（閲覧 Web UI）— 完了
-- **Phase 2**（操作アクション: SEND_Y/N/ENTER/STOP、二段階確認・HMAC・監査ログ）— 完了
-- **Phase 3**（`SEND_TEXT`: 任意テキスト送信。既定無効）— 完了
+- **Phase 1** (read-only web UI) — done
+- **Phase 2** (actions: SEND_Y/N/ENTER/STOP, two-step confirmation, HMAC, audit log) — done
+- **Phase 3** (`SEND_TEXT`: arbitrary text; disabled by default) — done
 
-`make lint` 緑 / `make test` 全 62 件 pass。
+`make lint` green / `make test` all 62 tests pass.
