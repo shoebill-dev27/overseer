@@ -119,7 +119,20 @@ Roles are ranked (higher includes lower). On first login a user is created as
   `config/agent.yaml`)
 - A GitHub OAuth App (for login)
 
-### Steps
+### Quick start (one-shot)
+
+Run the setup script. It installs dependencies, scaffolds `backend/.env` and
+`agent/.env`, generates secrets, and initializes the DB, then prints the manual
+steps (GitHub OAuth App, your user ID, role promotion). Existing `.env` files are
+never overwritten, so it is safe to re-run.
+
+```bash
+make bootstrap   # or: ./scripts/setup.sh
+```
+
+After it finishes, follow the printed steps, then `make dev`.
+
+### Steps (manual)
 ```bash
 # 1. Install dependencies (creates a venv for backend / agent each)
 make setup

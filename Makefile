@@ -1,4 +1,4 @@
-.PHONY: setup setup-backend setup-agent
+.PHONY: bootstrap setup setup-backend setup-agent
 .PHONY: run-backend run-agent dev
 .PHONY: lint test db-init help
 
@@ -9,6 +9,7 @@ help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Setup:"
+	@echo "  bootstrap       One-shot setup (deps, .env, secrets, DB) via scripts/setup.sh"
 	@echo "  setup           Install all dependencies"
 	@echo "  setup-backend   Install backend dependencies"
 	@echo "  setup-agent     Install agent dependencies"
@@ -24,6 +25,9 @@ help:
 	@echo "Quality:"
 	@echo "  lint            Run ruff + mypy"
 	@echo "  test            Run pytest"
+
+bootstrap:
+	./scripts/setup.sh
 
 setup: setup-backend setup-agent
 
