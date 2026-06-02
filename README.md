@@ -142,6 +142,52 @@ make dev           # backend と agent を同時起動
 
 ---
 
+## 監視対象セッションを用意する
+
+Agent は **セッション名が `claude-` で始まる tmux セッション**だけを監視する
+（プレフィックスは `config/agent.yaml` の `session_prefix`）。判定はセッション名の
+前方一致のみで、中で動いているプログラムは問わない。
+
+```bash
+# 新規に作って、その中で Claude Code を起動する
+tmux new -s claude-myproject
+
+# すでにあるセッションを対象にしたい場合は改名する
+tmux rename-session -t 既存のセッション名 claude-myproject
+```
+
+数秒後（ポーリング間隔は既定10秒）に Web UI のセッション一覧へ `claude-myproject`
+が現れる。
+
+---
+
+## リモートアクセス（Tailscale Serve で HTTPS 化）
+
+外出先やスマホから使う場合は、公開せず **Tailscale 上で HTTPS 配信**するのが手軽。
+
+```bash
+# backend は localhost のみにバインド（外部へは直接公開しない）
+cd backend && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# Tailscale Serve で 443 → backend をプロキシ（証明書は自動発行・tailnet 限定）
+tailscale serve --bg 8000
+```
+
+これで `https://<machine>.<tailnet>.ts.net`（ポート番号なし・正規証明書）から
+tailnet 内の全デバイス（スマホ含む）でアクセスできる。あわせて次を**同じ URL に揃える**:
+
+- `backend/.env` の `APP_BASE_URL` と `GITHUB_CALLBACK_URL`
+- GitHub OAuth App の Authorization callback URL
+  （`https://<machine>.<tailnet>.ts.net/auth/github/callback`）
+
+3つが食い違うと OAuth の `redirect_uri` 不一致でログインできないので注意。
+
+> `tailscale serve` は root/operator 権限が必要。一度
+> `sudo tailscale set --operator=$USER` しておくと以降は sudo なしで実行でき、
+> Serve 設定は tailscaled に永続化されて再起動後も残る。
+
+---
+
 ## 設定ファイル
 
 | ファイル                        | 役割                                                          |
@@ -185,6 +231,7 @@ make dev           # backend と agent を同時起動
 - CORS は `APP_BASE_URL` のみ許可。セキュリティヘッダ（CSP / X-Frame-Options 等）を付与。
 - GitHub の**数値ユーザーID**でホワイトリスト認可（username は表示用のみ）。
 - HTTP セッションはサーバ側保存のランダムトークン（24時間 TTL、revoke 可）。
+- セッション Cookie は `HttpOnly` / `SameSite=Strict` / `Secure`（HTTPS 配信時に平文では送出しない）。
 - Agent ↔ Backend は HMAC 署名 + タイムスタンプで認証。さらに `/internal` はクライアントIPを
   **ループバック（127.0.0.1 / ::1）に限定**し、外部送信元は HMAC 以前に 403 で拒否する。
 - スナップショット・ログは保存/送信前に**シークレット伏字化**（`scrubber.py`）。
@@ -205,7 +252,7 @@ make dev           # backend と agent を同時起動
 
 ```bash
 make lint    # ruff check + ruff format --check（backend / agent）
-make test    # pytest（backend 41 + agent 19 = 60 件）
+make test    # pytest（backend 43 + agent 19 = 62 件）
 ```
 
 ### プロジェクト構成
@@ -243,4 +290,4 @@ overseer/
 - **Phase 2**（操作アクション: SEND_Y/N/ENTER/STOP、二段階確認・HMAC・監査ログ）— 完了
 - **Phase 3**（`SEND_TEXT`: 任意テキスト送信。既定無効）— 完了
 
-`make lint` 緑 / `make test` 全 60 件 pass。
+`make lint` 緑 / `make test` 全 62 件 pass。
