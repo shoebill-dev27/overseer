@@ -1,10 +1,10 @@
-# Claude Code WAITING状態の検知パターン
-# Agent再起動なしで追加・変更可能（60秒ごとに動的リロード）
+# Detection patterns for Claude Code WAITING state
+# Can be added/changed without restarting the Agent (hot-reloaded every 60s)
 #
-# 将来課題: Claude Codeが公式状態取得APIを提供した場合は移行を検討
+# Future work: consider migrating if Claude Code provides an official status API
 
 patterns:
-  # 承認系
+  # Approval
   - name: approval_proceed
     regex: "Do you want to proceed\\?"
     category: APPROVAL
@@ -13,7 +13,7 @@ patterns:
     regex: "Do you want to continue\\?"
     category: APPROVAL
 
-  # 選択系
+  # Selection
   - name: option_which
     regex: "Which option\\?"
     category: SELECTION
@@ -26,7 +26,7 @@ patterns:
     regex: "^\\s*1\\."
     category: SELECTION
 
-  # 確認系
+  # Confirmation
   - name: yes_no_upper
     regex: "\\[Y/n\\]"
     category: CONFIRMATION
@@ -43,7 +43,7 @@ patterns:
     regex: "Press Enter to continue"
     category: CONFIRMATION
 
-  # 質問・明確化
+  # Question / clarification
   - name: clarification
     regex: "Need clarification"
     category: CLARIFICATION
