@@ -75,8 +75,8 @@ async def send_heartbeat() -> bool:
 
 
 async def fetch_pending_actions() -> list[dict]:
-    """実行待ち（CONFIRMED）の操作一覧を取得する。失敗時は空リスト。"""
-    body = b""  # GET なのでボディは空。HMAC は空ボディに対して署名する。
+    """Fetch the list of pending (CONFIRMED) actions. Returns an empty list on failure."""
+    body = b""  # GET, so the body is empty. HMAC signs the empty body.
     async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
         resp = await c.get(
             f"{_BACKEND_URL}/internal/actions/pending",

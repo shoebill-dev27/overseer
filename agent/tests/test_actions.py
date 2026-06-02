@@ -1,7 +1,7 @@
-"""agent のアクション実行ロジック execute_pending_actions のテスト。
+"""Tests for the agent's action execution logic, execute_pending_actions.
 
-client / tmux のネットワーク・プロセス呼び出しをスタブに差し替えて検証する。
-（agent venv に pytest-asyncio が無いため asyncio.run で実行）
+Network/process calls in client / tmux are replaced with stubs for verification.
+(The agent venv has no pytest-asyncio, so we run via asyncio.run.)
 """
 
 import asyncio
