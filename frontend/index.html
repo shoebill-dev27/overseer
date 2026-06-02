@@ -7,16 +7,16 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <!-- ログイン画面 -->
+  <!-- Login view -->
   <section id="login-view" class="view hidden">
     <div class="login-box">
       <h1>Overseer</h1>
       <p class="subtitle">Claude Code Remote Operations Console</p>
-      <a class="btn btn-primary" href="/auth/github">GitHub でログイン</a>
+      <a class="btn btn-primary" href="/auth/github">Log in with GitHub</a>
     </div>
   </section>
 
-  <!-- ダッシュボード画面 -->
+  <!-- Dashboard view -->
   <section id="dashboard-view" class="view hidden">
     <header class="topbar">
       <div class="topbar-left">
@@ -25,22 +25,22 @@
       </div>
       <div class="topbar-right">
         <span id="user-label"></span>
-        <button id="logout-btn" class="btn">ログアウト</button>
+        <button id="logout-btn" class="btn">Log out</button>
       </div>
     </header>
 
     <main class="layout">
-      <!-- セッション一覧 -->
+      <!-- Session list -->
       <div class="sidebar">
-        <h2>セッション</h2>
+        <h2>Sessions</h2>
         <ul id="session-list" class="session-list"></ul>
-        <p id="empty-hint" class="hint hidden">監視中のセッションはありません。</p>
+        <p id="empty-hint" class="hint hidden">No sessions are being monitored.</p>
       </div>
 
-      <!-- セッション詳細 -->
+      <!-- Session detail -->
       <div class="detail">
         <div id="detail-empty" class="detail-empty">
-          左の一覧からセッションを選択してください。
+          Select a session from the list on the left.
         </div>
         <div id="detail-content" class="hidden">
           <div class="detail-header">
