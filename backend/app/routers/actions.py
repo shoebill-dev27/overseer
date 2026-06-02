@@ -1,7 +1,7 @@
-"""Action API — 操作の作成・確認・状態取得（OPERATOR 以上が必要）。
+"""Action API — create/confirm actions and query status (requires OPERATOR or higher).
 
-二段階確認: 作成時は PENDING_CONFIRM、明示的な confirm で CONFIRMED に遷移。
-実際の tmux 操作は Local Agent が CONFIRMED を取得して実行する。
+Two-step confirmation: created as PENDING_CONFIRM, transitions to CONFIRMED on an
+explicit confirm. The actual tmux operation is fetched and executed by the Local Agent.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -16,13 +16,13 @@ from ..database import get_db
 
 router = APIRouter(prefix="/api", tags=["actions"])
 
-# 作成可能なアクション。SEND_TEXT のみ text_payload を伴う。
+# Actions that can be created. Only SEND_TEXT carries a text_payload.
 SUPPORTED_ACTIONS = {"SEND_Y", "SEND_N", "SEND_ENTER", "STOP", "SEND_TEXT"}
 
-# SEND_TEXT のテキスト最大長
+# Max text length for SEND_TEXT
 MAX_TEXT_LENGTH = 1000
 
-# PENDING_CONFIRM のまま確認されなかった操作の有効期限
+# TTL for actions left unconfirmed in PENDING_CONFIRM
 ACTION_TTL_SECONDS = 120
 
 
@@ -42,10 +42,10 @@ class CreateAction(BaseModel):
 
 
 def _validate_payload(action_type: str, text_payload: str | None) -> str | None:
-    """種別ごとに text_payload を検証して正規化する。
+    """Validate and normalize text_payload per action type.
 
-    SEND_TEXT は非空テキスト必須（改行は複数コマンド注入を防ぐため禁止）。
-    それ以外の種別に text_payload を付けることは許さない。
+    SEND_TEXT requires non-empty text (newlines are forbidden to prevent multi-command
+    injection). Other action types are not allowed to carry a text_payload.
     """
     if action_type == "SEND_TEXT":
         if text_payload is None or text_payload.strip() == "":
@@ -107,7 +107,7 @@ async def create_action(
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
 
-    # 冪等性: 同一キーの操作が既にあればそれを返す（重複作成しない）
+    # Idempotency: if an action with the same key exists, return it (no duplicate)
     existing = await (
         await db.execute(
             "SELECT * FROM actions WHERE idempotency_key = ?",
@@ -144,7 +144,7 @@ async def create_action(
     ).fetchone()
 
     ip = request.client.host if request.client else None
-    # 監査ログには生テキストを残さない（秘密情報の漏洩面を増やさないため文字数のみ）。
+    # Do not keep raw text in the audit log (length only, to avoid widening secret exposure).
     detail = {"action_type": payload.action_type, "action_id": row["id"]}
     if text_payload is not None:
         detail["text_length"] = len(text_payload)
@@ -179,7 +179,7 @@ async def confirm_action(
             f"Action is not pending confirmation (status: {row['status']})",
         )
 
-    # 期限切れ判定
+    # Expiry check
     if _now() - _parse(row["created_at"]) > timedelta(seconds=ACTION_TTL_SECONDS):
         await db.execute(
             "UPDATE actions SET status = 'EXPIRED' WHERE id = ?", (action_id,)

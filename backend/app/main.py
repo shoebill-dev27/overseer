@@ -120,9 +120,9 @@ app.include_router(auth.router)
 app.include_router(sessions.router)
 app.include_router(actions.router)
 app.include_router(ws.router)
-# Internal router はメインアプリに同梱して 0.0.0.0:8000 で配信されるが、
-# require_loopback 依存性がクライアントIPをループバック(127.0.0.1/::1)に限定するため、
-# 外部(Tailscale等)からの /internal アクセスは 403 で拒否される。
+# The Internal router is bundled into the main app and served on 0.0.0.0:8000, but
+# the require_loopback dependency restricts the client IP to loopback (127.0.0.1/::1),
+# so /internal access from external sources (Tailscale, etc.) is rejected with 403.
 app.include_router(internal.router)
 
 
@@ -132,9 +132,9 @@ async def health() -> dict:
 
 
 # ── Static frontend ───────────────────────────────────────────────────────────
-# 素の JS/HTML/CSS をバックエンドから配信（CSP: script-src 'self' に適合）。
-# API ルータの後にマウントするため、/api · /auth · /ws · /internal が優先される。
-# html=True により "/" は index.html を返す。
+# Serve plain JS/HTML/CSS from the backend (compatible with CSP: script-src 'self').
+# Mounted after the API routers, so /api, /auth, /ws, /internal take precedence.
+# With html=True, "/" returns index.html.
 
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 if _FRONTEND_DIR.is_dir():
