@@ -1,4 +1,4 @@
-"""Internal API（HMAC 認証つきの Agent 連携）のテスト。"""
+"""Tests for the Internal API (Agent integration with HMAC auth)."""
 
 import json
 
@@ -26,7 +26,7 @@ def test_session_update_valid_signature(client):
     data = resp.json()
     assert data["ok"] is True
     assert isinstance(data["session_id"], int)
-    assert data["prev_status"] is None  # 新規作成
+    assert data["prev_status"] is None  # newly created
 
 
 def test_session_update_is_upsert(client):
@@ -40,7 +40,7 @@ def test_session_update_is_upsert(client):
         "/internal/sessions/update", content=body2, headers=sign_agent(body2)
     ).json()
 
-    assert second["session_id"] == first["session_id"]  # 同一セッションを更新
+    assert second["session_id"] == first["session_id"]  # same session updated
     assert second["prev_status"] == "RUNNING"
 
 
@@ -54,7 +54,7 @@ def test_invalid_signature_rejected(client):
 
 def test_old_timestamp_rejected(client):
     body = _update_body()
-    headers = sign_agent(body, timestamp="1000000000")  # 2001 年 = 5 分超過
+    headers = sign_agent(body, timestamp="1000000000")  # year 2001 = beyond 5 min
     resp = client.post("/internal/sessions/update", content=body, headers=headers)
     assert resp.status_code == 403
 
@@ -75,7 +75,7 @@ def test_snapshot_is_scrubbed(client, make_user):
     ).json()
     session_id = update["session_id"]
 
-    # 閲覧 API でスナップショットを取得し、シークレットが除去されていることを確認
+    # Fetch the snapshot via the read API and confirm secrets are removed
     token = make_user(role="VIEWER")
     client.cookies.set("overseer_session", token)
     snap = client.get(f"/api/sessions/{session_id}/snapshot").json()
@@ -93,10 +93,10 @@ def test_heartbeat(client):
 
 
 def test_non_loopback_client_rejected():
-    """署名が正しくても、ループバック以外の送信元からの /internal は 403 で拒否する。
+    """Even with a valid signature, /internal from non-loopback sources is rejected with 403.
 
-    require_loopback を無効化しない素の TestClient を使う。TestClient の送信元は
-    "testclient"（非ループバック）固定なので、ここでは実際の制限が働く。
+    Uses a plain TestClient that does not disable require_loopback. The TestClient's
+    source is fixed to "testclient" (non-loopback), so the real restriction applies here.
     """
     from fastapi.testclient import TestClient
 

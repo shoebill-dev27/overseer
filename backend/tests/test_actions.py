@@ -1,4 +1,4 @@
-"""アクションの作成・確認・実行報告フローのテスト。"""
+"""Tests for the action create/confirm/result-reporting flow."""
 
 import json
 import sqlite3
@@ -79,7 +79,7 @@ def test_text_payload_rejected_for_non_text_action(client, make_user):
 
 
 def test_send_text_payload_reaches_pending(client, make_user):
-    """SEND_TEXT の text_payload が Agent 向け pending 一覧まで運ばれること。"""
+    """SEND_TEXT's text_payload is carried through to the Agent's pending list."""
     session_id = _create_session(client)
     client.cookies.set("overseer_session", make_user(role="OPERATOR"))
     action = _create_action(
@@ -126,13 +126,13 @@ def test_double_confirm_conflict(client, make_user):
 
 
 def test_full_flow_execute(client, make_user):
-    """create → confirm → agent が pending 取得 → 結果報告 → EXECUTED 反映。"""
+    """create → confirm → agent fetches pending → reports result → reflected as EXECUTED."""
     session_id = _create_session(client)
     client.cookies.set("overseer_session", make_user(role="OPERATOR"))
     action = _create_action(client, session_id, action_type="SEND_Y").json()
     client.post(f"/api/actions/{action['id']}/confirm")
 
-    # Agent: 実行待ち一覧の取得（HMAC、ボディなし）
+    # Agent: fetch the pending list (HMAC, no body)
     pending = client.get("/internal/actions/pending", headers=sign_agent(b"")).json()
     ids = [a["id"] for a in pending["actions"]]
     assert action["id"] in ids
@@ -140,7 +140,7 @@ def test_full_flow_execute(client, make_user):
     assert target["tmux_name"] == "claude-act"
     assert target["action_type"] == "SEND_Y"
 
-    # Agent: 実行結果を報告
+    # Agent: report the execution result
     body = json.dumps({"status": "EXECUTED", "failure_reason": None}).encode()
     result = client.post(
         f"/internal/actions/{action['id']}/result",
@@ -149,7 +149,7 @@ def test_full_flow_execute(client, make_user):
     )
     assert result.status_code == 200
 
-    # 状態が EXECUTED になっていること
+    # Status should be EXECUTED
     final = client.get(f"/api/actions/{action['id']}").json()
     assert final["status"] == "EXECUTED"
 
@@ -157,7 +157,7 @@ def test_full_flow_execute(client, make_user):
 def test_pending_only_returns_confirmed(client, make_user):
     session_id = _create_session(client)
     client.cookies.set("overseer_session", make_user(role="OPERATOR"))
-    # 確認していない（PENDING_CONFIRM のまま）の操作は pending に出ない
+    # Unconfirmed actions (still PENDING_CONFIRM) do not appear in pending
     _create_action(client, session_id, key="unconfirmed")
     pending = client.get("/internal/actions/pending", headers=sign_agent(b"")).json()
     assert pending["actions"] == []
@@ -168,7 +168,7 @@ def test_expired_action_dropped_in_pending(client, make_user):
     client.cookies.set("overseer_session", make_user(role="OPERATOR"))
     action = _create_action(client, session_id, key="old").json()
 
-    # created_at を TTL より前に書き換えて期限切れ状態を作る
+    # Rewrite created_at to before the TTL to create an expired state
     old = (datetime.now(timezone.utc) - timedelta(seconds=300)).isoformat()
     con = sqlite3.connect(os.environ["DATABASE_PATH"])
     con.execute("UPDATE actions SET created_at = ? WHERE id = ?", (old, action["id"]))
@@ -177,6 +177,6 @@ def test_expired_action_dropped_in_pending(client, make_user):
 
     client.get(
         "/internal/actions/pending", headers=sign_agent(b"")
-    )  # 遅延期限切れを発火
+    )  # trigger lazy expiry
     final = client.get(f"/api/actions/{action['id']}").json()
     assert final["status"] == "EXPIRED"

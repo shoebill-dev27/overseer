@@ -19,7 +19,7 @@ from ..database import get_db
 from ..scrubber import scrub
 from ..ws_manager import manager as ws_manager
 
-# Internal API は同一ホストの Local Agent 専用。ループバック以外の送信元は拒否する。
+# The Internal API is only for the Local Agent on the same host. Reject non-loopback sources.
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
 
 
@@ -29,7 +29,7 @@ async def require_loopback(request: Request) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Internal API is loopback-only")
 
 
-# 全 /internal エンドポイントで送信元をループバックに限定する。
+# Restrict the source to loopback for all /internal endpoints.
 router = APIRouter(
     prefix="/internal",
     tags=["internal"],
@@ -39,7 +39,7 @@ router = APIRouter(
 _MAX_SNAPSHOT_LINES = 100
 _MAX_SNAPSHOT_BYTES = 64 * 1024  # 64KB
 
-# PENDING_CONFIRM のまま確認されなかった操作の有効期限（actions.py と同値）
+# TTL for actions left unconfirmed in PENDING_CONFIRM (same value as actions.py)
 _ACTION_TTL_SECONDS = 120
 
 
@@ -219,7 +219,7 @@ async def heartbeat(
 async def pending_actions(
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
-    """Agent が実行すべき CONFIRMED 操作を返す。未確認のまま期限切れの操作は EXPIRED に落とす。"""
+    """Return CONFIRMED actions for the Agent to run. Unconfirmed expired actions drop to EXPIRED."""
     now = datetime.now(timezone.utc)
     cutoff_iso = (now - timedelta(seconds=_ACTION_TTL_SECONDS)).isoformat()
     await db.execute(
