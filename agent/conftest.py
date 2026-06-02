@@ -1,4 +1,4 @@
-"""pytest 共通設定 — agent ルートを import パスに追加する。"""
+"""Shared pytest configuration — add the agent root to the import path."""
 
 import sys
 from pathlib import Path

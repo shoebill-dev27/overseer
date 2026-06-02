@@ -1,4 +1,4 @@
-"""PatternMatcher の検知ロジックのテスト。"""
+"""Tests for PatternMatcher's detection logic."""
 
 import textwrap
 
@@ -73,12 +73,12 @@ def test_invalid_regex_is_skipped(tmp_path):
         """,
     )
     m = PatternMatcher(path)
-    # 不正な正規表現はスキップされ、正常なものだけ残る
+    # Invalid regexes are skipped; only valid ones remain
     assert m.match("valid").pattern_name == "good"
 
 
 def test_real_waiting_patterns_load_and_detect(tmp_path):
-    # リポジトリ同梱の本番パターンが読み込め、代表ケースを検知できること
+    # The repo's bundled production patterns load and detect representative cases
     from pathlib import Path
 
     real = Path(__file__).resolve().parents[2] / "config" / "waiting_patterns.yaml"
