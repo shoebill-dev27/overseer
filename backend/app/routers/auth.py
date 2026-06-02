@@ -35,15 +35,15 @@ def _clean_states() -> None:
         del _pending_states[s]
 
 
-# GitHub への通信は一時的な接続エラーで失敗しうるため、数回リトライする。
+# Calls to GitHub can fail with transient connection errors, so retry a few times.
 _HTTP_TIMEOUT = 10.0
 _HTTP_RETRIES = 4
 
 
 async def _github_request(method: str, url: str, **kwargs) -> httpx.Response:
-    """GitHub へ HTTP リクエストを送り、一時的な接続/読み取りエラーをリトライする。
+    """Send an HTTP request to GitHub, retrying transient connection/read errors.
 
-    全試行が失敗した場合は 502 を返す（500 ではなく上流障害として扱う）。
+    If all attempts fail, return 502 (treated as an upstream failure, not a 500).
     """
     last_exc: httpx.TransportError | None = None
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:

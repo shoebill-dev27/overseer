@@ -1,4 +1,4 @@
-"""閲覧 API（認証・ロール）と heartbeat 反映のテスト。"""
+"""Tests for the read API (auth/roles) and heartbeat reflection."""
 
 import json
 
