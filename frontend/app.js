@@ -184,10 +184,19 @@ function renderDetailHeader(session) {
 
 function renderActions(session) {
   const bar = $("action-bar");
+
+  // Preserve any text the operator was typing before we rebuild the bar.
+  // Background WebSocket refreshes re-render the detail header frequently, and
+  // we must not wipe in-progress input.
+  const prevText = bar.querySelector(".text-input")?.value ?? "";
+
   bar.innerHTML = "";
 
-  // Show action buttons to OPERATOR+ only for sessions waiting for input
-  if (!CAN_OPERATE() || session.status !== "WAITING_FOR_INPUT") {
+  // Controls are available to OPERATOR+ on any live session. Status detection
+  // (WAITING_FOR_INPUT vs RUNNING) is heuristic and can miss prompts, so we do
+  // not gate operability on it — the status badge conveys the detected state.
+  // A FINISHED session has no tmux pane left, so there is nothing to send to.
+  if (!CAN_OPERATE() || session.status === "FINISHED") {
     hide(bar);
     return;
   }
@@ -206,6 +215,7 @@ function renderActions(session) {
   input.className = "text-input";
   input.placeholder = "Text to send";
   input.maxLength = MAX_TEXT_LENGTH;
+  input.value = prevText;
 
   const sendBtn = document.createElement("button");
   sendBtn.className = "btn-action";
