@@ -19,12 +19,16 @@ async def list_sessions(
     user: aiosqlite.Row = Depends(require_viewer),
     db: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
+    # FINISHED sessions are kept in the database for the record, but excluded
+    # from the dashboard list to reduce noise (they have no live tmux pane and
+    # nothing actionable left). They remain reachable via GET /sessions/{id}.
     rows = await (
         await db.execute(
             """
             SELECT id, tmux_name, status, waiting_category,
                    started_at, last_updated_at, finished_at
             FROM claude_sessions
+            WHERE status != 'FINISHED'
             ORDER BY last_updated_at DESC
             """
         )
