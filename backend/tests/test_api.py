@@ -31,6 +31,19 @@ def test_sessions_lists_after_agent_update(client, make_user):
     assert "claude-x" in names
 
 
+def test_finished_sessions_excluded_from_list(client, make_user):
+    running = json.dumps({"tmux_name": "claude-live", "status": "RUNNING"}).encode()
+    client.post("/internal/sessions/update", content=running, headers=sign_agent(running))
+    done = json.dumps({"tmux_name": "claude-demo", "status": "FINISHED"}).encode()
+    client.post("/internal/sessions/update", content=done, headers=sign_agent(done))
+
+    token = make_user(role="VIEWER")
+    client.cookies.set("overseer_session", token)
+    names = [s["tmux_name"] for s in client.get("/api/sessions").json()["sessions"]]
+    assert "claude-live" in names
+    assert "claude-demo" not in names
+
+
 def test_get_missing_session_404(client, make_user):
     token = make_user(role="VIEWER")
     client.cookies.set("overseer_session", token)
