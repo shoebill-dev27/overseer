@@ -35,6 +35,7 @@ out/
 .cursor/
 .claude/
 .idea/
+.serena/
 
 # OS
 .DS_Store

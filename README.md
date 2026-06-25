@@ -282,10 +282,10 @@ careful.
   the current code (reserved for future use).
 - The OAuth state is held in process memory (assumes a single process; an
   in-progress login is lost on restart).
-- `SEND_TEXT` (arbitrary text) is implemented but **disabled by default** in
-  `config/agent.yaml` for safety. Enabling it lets the browser send arbitrary
-  strings to tmux, so set `SEND_TEXT: true` explicitly as an operational decision
-  (OPERATOR or higher + two-step confirmation are always required).
+- `SEND_TEXT` (arbitrary text) is **enabled by default** in `config/agent.yaml`.
+  It lets the browser send arbitrary strings to tmux, so OPERATOR or higher and
+  two-step confirmation are always required. Set `SEND_TEXT: false` to disable it
+  as an operational decision.
 
 ---
 
@@ -329,6 +329,6 @@ overseer/
 
 - **Phase 1** (read-only web UI) — done
 - **Phase 2** (actions: SEND_Y/N/ENTER/STOP, two-step confirmation, HMAC, audit log) — done
-- **Phase 3** (`SEND_TEXT`: arbitrary text; disabled by default) — done
+- **Phase 3** (`SEND_TEXT`: arbitrary text; enabled by default) — done
 
 `make lint` green / `make test` all 62 tests pass.

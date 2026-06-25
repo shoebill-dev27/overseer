@@ -28,7 +28,7 @@ actions:
   SEND_Y: true
   SEND_N: true
   SEND_ENTER: true
-  # Arbitrary text send. Implemented but disabled by default for safety. Enabling it
-  # lets the browser send arbitrary strings to tmux, so set it to true explicitly as
-  # an operational decision.
-  SEND_TEXT: false
+  # Arbitrary text send. Enabled by default. This lets the browser send arbitrary
+  # strings to tmux, so OPERATOR or higher and two-step confirmation are always
+  # required. Set it to false to disable arbitrary text send as an operational decision.
+  SEND_TEXT: true
